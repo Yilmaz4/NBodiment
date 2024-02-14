@@ -1,7 +1,19 @@
 #version 430 core
 
-in vec3 position;
+layout(std430, binding = 0) volatile buffer vBuffer {
+    vec4 vertices[];
+};
+
+uniform double uTimeDelta;
+
+uniform mat4 uMatrix;
+
+out vec3 vertexColor;
 
 void main() {
-    gl_Position = vec4(position, 1.0);
+    int i = gl_VertexID * 2;
+    vec4 vel = vec4(vertices[i + 1].xy * float(uTimeDelta), 0, 0);
+    vertices[i] += vel;
+    gl_Position = uMatrix * vertices[i];
+    vertexColor = vec3(1, 1, 1);
 }
