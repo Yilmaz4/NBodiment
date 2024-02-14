@@ -19,6 +19,7 @@
 #include <vector>
 #include <random>
 #include <iostream>
+#include <bitset>
 
 namespace ImGui {
     ImFont* font;
@@ -126,6 +127,7 @@ public:
 };
 
 #include "resource.h"
+#include <bitset>
 
 class Shader {
     GLuint vertexShader;
@@ -184,7 +186,7 @@ public:
     glm::vec3 position  = { 1.f, 0.f, 0.f };
     glm::vec3 direction = { 0.f, 1.f, 0.f };
     float fov = 60.f;
-    float speed = 0.1f;
+    float speed = 0.05f;
 
     void proj_mat(float w, float h, float nearPlane, float farPlane, GLuint shaderID, const char* uniform) {
         auto view = glm::mat4(1.f);
@@ -196,10 +198,11 @@ public:
         glUniformMatrix4fv(glGetUniformLocation(shaderID, uniform), 1, GL_FALSE, glm::value_ptr(proj * view));
     }
 
-    void processInput(glm::bvec4 keys) {
+    void processInput(std::bitset<6> keys) {
         float sign_x = (keys[1] && !keys[3] ? -1.f : (keys[3] && !keys[1] ? 1.f : 0.f));
         float sign_y = (keys[0] && !keys[2] ? 1.f : (keys[2] && !keys[0] ? -1.f : 0.f));
-        position += glm::vec3({ sign_x * speed, sign_y * speed, 0.f });
+        float sign_z = (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f));
+        position += glm::vec3({ sign_x * speed, sign_y * speed, sign_z * speed });
     }
 };
 
@@ -214,7 +217,7 @@ class NBodiment {
     glm::ivec2 res;
     std::vector<glm::vec4> pBuffer;
 
-    glm::bvec4 keys = { 0, 0, 0, 0 }; // wasd
+    std::bitset<6> keys{ 0x0 };
 public:
     NBodiment() {
         glfwInit();
@@ -272,7 +275,7 @@ public:
         std::random_device rd;
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
-        std::uniform_real_distribution<float> vel(-0.0f, 0.0f);
+        std::uniform_real_distribution<float> vel(-0.1f, 0.1f);
 
         for (int i = 0; i < 100; i++) {
             pBuffer.push_back({ pos(rng),pos(rng),pos(rng), 1.0 });
@@ -298,7 +301,7 @@ public:
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
         switch (action) {
         case GLFW_PRESS:
-            app->keys |= glm::bvec4({ key == GLFW_KEY_W, key == GLFW_KEY_A, key == GLFW_KEY_S, key == GLFW_KEY_D });
+            app->keys |= ((int)(key == GLFW_KEY_W) | (int)(key == GLFW_KEY_A) << 1 | (int)(key == GLFW_KEY_S) << 2 | (int)(key == GLFW_KEY_D) << 3 | (int)(key == GLFW_KEY_LEFT_SHIFT) << 4 | (int)(key == GLFW_KEY_LEFT_CONTROL) << 5);
             switch (key) {
             case GLFW_KEY_ESCAPE:
                 glfwSetWindowShouldClose(window, true);
@@ -306,9 +309,8 @@ public:
             }
             break;
         case GLFW_RELEASE:
-            app->keys &= glm::bvec4({ key != GLFW_KEY_W, key != GLFW_KEY_A, key != GLFW_KEY_S, key != GLFW_KEY_D });
+            app->keys &= ((int)(key != GLFW_KEY_W) | (int)(key != GLFW_KEY_A) << 1 | (int)(key != GLFW_KEY_S) << 2 | (int)(key != GLFW_KEY_D) << 3 | (int)(key != GLFW_KEY_LEFT_SHIFT) << 4 | (int)(key != GLFW_KEY_LEFT_CONTROL) << 5);
         }
-        
     }
 
     void mainloop() {
@@ -335,9 +337,7 @@ public:
                 ImGuiWindowFlags_AlwaysAutoResize |
                 ImGuiWindowFlags_NoMove
             )) {
-                
                 ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
-                
             }
             ImGui::PopFont();
             ImGui::End();
@@ -350,12 +350,12 @@ public:
             ImGui::Render();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            glPointSize(5.f);
             glDrawArrays(GL_POINTS, 0, pBuffer.size() / 2);
 
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(window);
         } while (!glfwWindowShouldClose(this->window));
+
         glfwDestroyWindow(window);
         glfwTerminate();
     }
