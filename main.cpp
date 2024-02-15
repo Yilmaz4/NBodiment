@@ -182,27 +182,47 @@ public:
 };
 
 class Camera {
+    float yaw = -90.0f;
+    float pitch = 0.0f;
 public:
-    glm::vec3 position  = { 1.f, 0.f, 0.f };
-    glm::vec3 direction = { 0.f, 1.f, 0.f };
+    glm::vec3 position  = { 0.f, -4.f,  0.f };
+    glm::vec3 direction = { 0.f,  0.f, -1.f };
+    glm::vec3 upvector  = { 0.f,  1.f,  0.f };
     float fov = 60.f;
-    float speed = 0.05f;
+    float sensitivity = 0.1f;
+    float speed = 5.f;
 
-    void proj_mat(float w, float h, float nearPlane, float farPlane, GLuint shaderID, const char* uniform) {
+    bool mouseLocked = false;
+
+    void projMat(float w, float h, float nearPlane, float farPlane, GLuint shaderID, const char* uniform) {
         auto view = glm::mat4(1.f);
         auto proj = glm::mat4(1.f);
 
-        view = glm::lookAt(position, direction + position, { 0.f, 0.f, 1.f });
+        view = glm::lookAt(position, direction + position, { 0.f, 1.f, 0.f });
         proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
 
         glUniformMatrix4fv(glGetUniformLocation(shaderID, uniform), 1, GL_FALSE, glm::value_ptr(proj * view));
     }
 
-    void processInput(std::bitset<6> keys) {
-        float sign_x = (keys[1] && !keys[3] ? -1.f : (keys[3] && !keys[1] ? 1.f : 0.f));
-        float sign_y = (keys[0] && !keys[2] ? 1.f : (keys[2] && !keys[0] ? -1.f : 0.f));
-        float sign_z = (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f));
-        position += glm::vec3({ sign_x * speed, sign_y * speed, sign_z * speed });
+    void processInput(std::bitset<6> keys, float dt) {
+        position += glm::vec3({
+            speed * dt * (keys[0] && !keys[2] ?  1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
+            speed * dt * (keys[4] && !keys[5] ?  1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
+            glm::cross(upvector, direction) * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * speed * dt
+        });
+    }
+
+    void rotate(float xoffset, float yoffset) {
+        yaw   += xoffset * sensitivity;
+        pitch += yoffset * sensitivity;
+
+        if (pitch >  89.9f) pitch =  89.9f;
+        if (pitch < -89.9f) pitch = -89.9f;
+
+        direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        direction.y = sin(glm::radians(pitch));
+        direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        direction = glm::normalize(direction);
     }
 };
 
@@ -216,8 +236,9 @@ class NBodiment {
 
     glm::ivec2 res;
     std::vector<glm::vec4> pBuffer;
-
     std::bitset<6> keys{ 0x0 };
+    glm::dvec2 prevMousePos{ 0.f, 0.f };
+    double lastSpeedChange = -5;
 public:
     NBodiment() {
         glfwInit();
@@ -242,10 +263,15 @@ public:
         // initialize callback functions
         glfwSetFramebufferSizeCallback(window, on_windowResize);
         glfwSetKeyCallback(window, on_keyPress);
+        glfwSetScrollCallback(window, on_mouseScroll);
+        glfwSetCursorPosCallback(window, on_mouseMove);
 
         glfwSwapInterval(1);
 
         glfwSetWindowUserPointer(window, this);
+
+        if (glfwRawMouseMotionSupported()) glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        glfwGetCursorPos(window, &prevMousePos.x, &prevMousePos.y);
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -274,12 +300,12 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
-        std::uniform_real_distribution<float> vel(-0.1f, 0.1f);
+        std::uniform_real_distribution<float> pos(-10.0f, 10.0f);
+        std::uniform_real_distribution<float> vel(-1.0f, 1.0f);
 
-        for (int i = 0; i < 100; i++) {
-            pBuffer.push_back({ pos(rng),pos(rng),pos(rng), 1.0 });
-            pBuffer.push_back({ vel(rng),vel(rng),vel(rng), 1.0 });
+        for (int i = 0; i < 10000; i++) {
+            pBuffer.push_back({ pos(rng), pos(rng), pos(rng), 1.0 });
+            pBuffer.push_back({ vel(rng), vel(rng), vel(rng), 1.0 });
         }
 
         glGenBuffers(1, &ssbo);
@@ -301,32 +327,55 @@ public:
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
         switch (action) {
         case GLFW_PRESS:
-            app->keys |= ((int)(key == GLFW_KEY_W) | (int)(key == GLFW_KEY_A) << 1 | (int)(key == GLFW_KEY_S) << 2 | (int)(key == GLFW_KEY_D) << 3 | (int)(key == GLFW_KEY_LEFT_SHIFT) << 4 | (int)(key == GLFW_KEY_LEFT_CONTROL) << 5);
+            app->keys |= ((int)(key == GLFW_KEY_W) | (int)(key == GLFW_KEY_A) << 1 | (int)(key == GLFW_KEY_S) << 2 | (int)(key == GLFW_KEY_D) << 3 | (int)(key == GLFW_KEY_SPACE) << 4 | (int)(key == GLFW_KEY_LEFT_SHIFT) << 5);
             switch (key) {
             case GLFW_KEY_ESCAPE:
                 glfwSetWindowShouldClose(window, true);
                 break;
+            case GLFW_KEY_LEFT_CONTROL:
+                app->camera.mouseLocked ^= 1;
+                glfwGetCursorPos(window, &app->prevMousePos.x, &app->prevMousePos.y);
+                glfwSetInputMode(window, GLFW_CURSOR, app->camera.mouseLocked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
             }
             break;
         case GLFW_RELEASE:
-            app->keys &= ((int)(key != GLFW_KEY_W) | (int)(key != GLFW_KEY_A) << 1 | (int)(key != GLFW_KEY_S) << 2 | (int)(key != GLFW_KEY_D) << 3 | (int)(key != GLFW_KEY_LEFT_SHIFT) << 4 | (int)(key != GLFW_KEY_LEFT_CONTROL) << 5);
+            app->keys &= ((int)(key != GLFW_KEY_W) | (int)(key != GLFW_KEY_A) << 1 | (int)(key != GLFW_KEY_S) << 2 | (int)(key != GLFW_KEY_D) << 3 | (int)(key != GLFW_KEY_SPACE) << 4 | (int)(key != GLFW_KEY_LEFT_SHIFT) << 5);
         }
+    }
+
+    static inline void on_mouseMove(GLFWwindow* window, double x, double y) {
+        NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
+        if (ImGui::GetIO().WantCaptureMouse)
+            return;
+        if (app->camera.mouseLocked) {
+            float xoffset = x - app->prevMousePos.x;
+            float yoffset = app->prevMousePos.y - y;
+            app->prevMousePos = { x, y };
+
+            app->camera.rotate(xoffset, yoffset);
+        }
+    }
+
+    static inline void on_mouseScroll(GLFWwindow* window, double x, double y) {
+        NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
+        app->camera.speed += static_cast<float>(y) * (app->camera.speed / 2);
+        app->lastSpeedChange = glfwGetTime();
     }
 
     void mainloop() {
         double lastFrame = glfwGetTime();
         double fps = 0;
         do {
+            double currentTime = glfwGetTime();
+            double dt = currentTime - lastFrame;
+            fps = 1.0 / dt;
+
             glfwPollEvents();
-            camera.processInput(this->keys);
-            camera.proj_mat(res.x, res.y, 0.1f, 100.f, shader.id, "uMatrix");
+            camera.processInput(this->keys, static_cast<float>(dt));
+            camera.projMat(res.x, res.y, 0.1f, 10e+4, shader.id, "uMatrix");
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
-
-            double currentTime = glfwGetTime();
-            fps = 1 / (currentTime - lastFrame);
-            
 
             ImGui::PushFont(ImGui::font);
             ImGui::SetNextWindowPos({ 10, 10 });
@@ -339,8 +388,20 @@ public:
             )) {
                 ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
             }
-            ImGui::PopFont();
             ImGui::End();
+
+            if (currentTime - lastSpeedChange < 2.0) {
+                ImGui::Begin("##speed", nullptr,
+                    ImGuiWindowFlags_AlwaysAutoResize |
+                    ImGuiWindowFlags_NoCollapse |
+                    ImGuiWindowFlags_NoTitleBar |
+                    ImGuiWindowFlags_NoMove
+                );
+                ImGui::Text("Speed: %.3g m/s", camera.speed);
+                ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
+                ImGui::End();
+            }
+            ImGui::PopFont();
 
             glViewport(0, 0, res.x, res.y);
 
