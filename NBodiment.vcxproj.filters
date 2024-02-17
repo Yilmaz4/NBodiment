@@ -77,6 +77,9 @@
     <None Include="shaders\geometry.glsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="shaders\gravity.glsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Shaders">

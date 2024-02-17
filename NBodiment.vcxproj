@@ -182,6 +182,7 @@
   <ItemGroup>
     <None Include="shaders\fragment.glsl" />
     <None Include="shaders\geometry.glsl" />
+    <None Include="shaders\gravity.glsl" />
     <None Include="shaders\vertex.glsl" />
   </ItemGroup>
   <ItemGroup>
