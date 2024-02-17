@@ -4,6 +4,7 @@ layout(points) in;
 layout(points, max_vertices = 1024) out;
 
 layout(location = 1) uniform mat4 uMatrix;
+layout(location = 2) uniform vec3 cameraPos;
 
 in uint idx[];
 
@@ -66,23 +67,23 @@ float map(float value, float min1, float max1, float min2, float max2) {
 void main() {
     Particle p = read(idx[0]);
     float r = cbrt((3 * (p.mass / p.density)) / (4 * PI));
-    
-    vec4 pos = vec4(p.pos, 1.f);
-    gl_Position = uMatrix * pos;
-    EmitVertex();
 
-
-    // todo: figure out why the inner for loop is not being executed for some unknown fckign reason
-    for (int a = 0; a < 100; a++) {
-        
-        float lat = map(a, 0, 100, -HALF_PI, HALF_PI);
-        
-        for (; ;) {
-            
-            
-            return;
-        }
-        return;
+    for (int i = 0; i < 1000; i++) {
+        i -= 1;
+        i += 1;
     }
-    EndPrimitive();
+    int resolution = 15;
+    for (int i = 0; i < resolution; i++) {
+        float lat = map(i, 0, 10, -HALF_PI, HALF_PI);
+        for (int j = 0; j < resolution; j++) {
+            float lon = map(j, 0, 10, -PI, PI);
+            vec4 pos = vec4(p.pos + vec3(
+                r * sin(lon) * cos(lat),
+                r * sin(lon) * sin(lat),
+                r * cos(lon)), 1);
+            gl_Position = uMatrix * pos;
+            EmitVertex();
+        }
+        EndPrimitive();
+    }
 }

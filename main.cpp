@@ -370,7 +370,7 @@ public:
                 .acc = {0.f, 0.f, 0.f},
                 .mass = mass(rng),
                 .temp = 0.5,
-                .density = 1
+                .density = 1e+11
             }));
         }
         
@@ -391,6 +391,7 @@ public:
         shader.create();
         shader.use();
         glShaderStorageBlockBinding(shader.id, glGetProgramResourceIndex(shader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
+        glUniform3f(glGetUniformLocation(shader.id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
 
         GLuint VAO;
         glGenVertexArrays(1, &VAO);
@@ -410,6 +411,7 @@ public:
         switch (action) {
         case GLFW_PRESS:
             app->keys |= ((int)(key == GLFW_KEY_W) | (int)(key == GLFW_KEY_A) << 1 | (int)(key == GLFW_KEY_S) << 2 | (int)(key == GLFW_KEY_D) << 3 | (int)(key == GLFW_KEY_SPACE) << 4 | (int)(key == GLFW_KEY_LEFT_SHIFT) << 5);
+            glUniform3f(glGetUniformLocation(app->shader.id, "cameraPos"), app->camera.position.x, app->camera.position.y, app->camera.position.z);
             switch (key) {
             case GLFW_KEY_ESCAPE:
                 glfwSetWindowShouldClose(window, true);
@@ -457,7 +459,7 @@ public:
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt));
-            camera.projMat(res.x, res.y, 0.f, 10e+10, shader.id, "uMatrix");
+            camera.projMat(res.x, res.y, 0.f, 1e+6, shader.id, "uMatrix");
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
