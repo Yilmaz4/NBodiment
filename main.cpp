@@ -110,6 +110,15 @@ namespace ImGui {
     }
 }
 
+enum Integration {
+    ImplicitEuler,
+    ExplicitEuler,
+    SemiImplicitEuler,
+    Midpoint,
+    RangaKatta4,
+    Verlet,
+};
+
 class Error : public std::exception {
     wchar_t msg[1024];
 public:
@@ -131,15 +140,20 @@ public:
 
 class Shader {
     GLuint vertexShader;
+    GLuint geometryShader;
     GLuint fragmentShader;
-
-    static const char* read_resource(int name) {
-        HMODULE handle = ::GetModuleHandle(NULL);
-        HRSRC rc = ::FindResource(handle, MAKEINTRESOURCE(name), MAKEINTRESOURCE(TEXTFILE));
+protected:
+    static inline char* read_resource(int name) {
+        HMODULE handle = GetModuleHandleW(NULL);
+        HRSRC rc = FindResourceW(handle, MAKEINTRESOURCE(name), MAKEINTRESOURCE(TEXTFILE));
         if (rc == NULL) return nullptr;
-        HGLOBAL rcData = ::LoadResource(handle, rc);
+        HGLOBAL rcData = LoadResource(handle, rc);
         if (rcData == NULL) return nullptr;
-        return static_cast<const char*>(::LockResource(rcData));
+        DWORD size = SizeofResource(handle, rc);
+        char* res = new char[size + 1];
+        memcpy(res, static_cast<const char*>(LockResource(rcData)), size);
+        res[size] = '\0';
+        return res;
     }
 public:
     GLuint id;
@@ -147,8 +161,9 @@ public:
         int success;
         char infoLog[1024];
 
-        const char* vertexSource = this->read_resource(IDR_VRTX);
-        const char* fragmentSource = this->read_resource(IDR_FRAG);
+        char* vertexSource = this->read_resource(IDR_VRTX);
+        char* geometrySource = this->read_resource(IDR_GEOM);
+        char* fragmentSource = this->read_resource(IDR_FRAG);
 
         vertexShader = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertexShader, 1, &vertexSource, NULL);
@@ -156,6 +171,15 @@ public:
         glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
         if (!success) {
             glGetShaderInfoLog(vertexShader, 1024, NULL, infoLog);
+            throw Error(infoLog);
+        }
+
+        geometryShader = glCreateShader(GL_GEOMETRY_SHADER);
+        glShaderSource(geometryShader, 1, &geometrySource, NULL);
+        glCompileShader(geometryShader);
+        glGetShaderiv(geometryShader, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            glGetShaderInfoLog(geometryShader, 1024, NULL, infoLog);
             throw Error(infoLog);
         }
 
@@ -170,22 +194,47 @@ public:
 
         id = glCreateProgram();
         glAttachShader(id, vertexShader);
+        glAttachShader(id, geometryShader);
         glAttachShader(id, fragmentShader);
         glLinkProgram(id);
 
         glDeleteShader(vertexShader);
+        glDeleteShader(geometryShader);
         glDeleteShader(fragmentShader);
-        this->use();
     }
     inline void use() { glUseProgram(id); }
     inline void free() { glDeleteProgram(id); }
+};
+
+class ComputeShader : public Shader {
+    GLuint computeShader;
+public:
+    inline void create() {
+        int success;
+        char infoLog[1024];
+        char* computeSource = this->read_resource(IDR_CMPT);
+
+        computeShader = glCreateShader(GL_COMPUTE_SHADER);
+        glShaderSource(computeShader, 1, &computeSource, NULL);
+        glCompileShader(computeShader);
+        glGetShaderiv(computeShader, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            glGetShaderInfoLog(computeShader, 1024, NULL, infoLog);
+            throw Error(infoLog);
+        }
+
+        id = glCreateProgram();
+        glAttachShader(id, computeShader);
+        glLinkProgram(id);
+        glDeleteShader(computeShader);
+    }
 };
 
 class Camera {
     float yaw = -90.0f;
     float pitch = 0.0f;
 public:
-    glm::vec3 position  = { 0.f, -4.f,  0.f };
+    glm::vec3 position  = { 0.f,  0.f,  0.f };
     glm::vec3 direction = { 0.f,  0.f, -1.f };
     glm::vec3 upvector  = { 0.f,  1.f,  0.f };
     float fov = 60.f;
@@ -205,10 +254,14 @@ public:
     }
 
     void processInput(std::bitset<6> keys, float dt) {
+        glm::vec3 upvec = direction;
+        upvec.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
+        upvec.y = sin(glm::radians(pitch + 90));
+        upvec.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
         position += glm::vec3({
             speed * dt * (keys[0] && !keys[2] ?  1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
             speed * dt * (keys[4] && !keys[5] ?  1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
-            glm::cross(upvector, direction) * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * speed * dt
+            glm::cross(upvec, direction) * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * speed * dt
         });
     }
 
@@ -216,8 +269,8 @@ public:
         yaw   += xoffset * sensitivity;
         pitch += yoffset * sensitivity;
 
-        if (pitch >  89.9f) pitch =  89.9f;
-        if (pitch < -89.9f) pitch = -89.9f;
+        if (pitch >  89.0f) pitch =  89.0f;
+        if (pitch < -89.0f) pitch = -89.0f;
 
         direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
         direction.y = sin(glm::radians(pitch));
@@ -226,8 +279,18 @@ public:
     }
 };
 
+struct Particle {
+    glm::vec3 pos;
+    glm::vec3 vel;
+    glm::vec3 acc;
+    float mass;
+    float temp;
+    float density;
+};
+
 class NBodiment {
     Shader shader;
+    ComputeShader cmptshader;
     Camera camera;
     GLuint ssbo;
 
@@ -235,10 +298,11 @@ class NBodiment {
     GLFWmonitor* monitor;
 
     glm::ivec2 res;
-    std::vector<glm::vec4> pBuffer;
+    std::vector<Particle> pBuffer;
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5;
+    float timeStep = 0.0002f;
 public:
     NBodiment() {
         glfwInit();
@@ -289,32 +353,50 @@ public:
             throw Error("Failed to load GLAD");
         }
 
+        
+        std::random_device rd;
+        std::mt19937 rng(rd());
+        std::uniform_real_distribution<float> pos(-1.f, 1.f);
+        std::uniform_real_distribution<float> vel(-1.5f, 1.5f);
+        std::uniform_real_distribution<float> mass(1e+1, 1e+5);
+
+        pBuffer.push_back(Particle({-0.001f, 0.f, 0.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1e+10, 0.5, 1));
+        for (int i = 0; i < 500; i++) {
+            glm::vec4 p = { pos(rng), pos(rng), pos(rng), 0 };
+            glm::vec4 v = { vel(rng), vel(rng), vel(rng), 0 };
+            pBuffer.push_back(Particle({
+                .pos = p,
+                .vel = v,
+                .acc = {0.f, 0.f, 0.f},
+                .mass = mass(rng),
+                .temp = 0.5,
+                .density = 1
+            }));
+        }
+        
+        //pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 5.972e+24, 0, 1)); // earth
+        //pBuffer.push_back(Particle({ 384400.f, 0.f, 0.f }, { 0.f, 0.f, 1022.f }, { 0.f, 0.f, 0.f }, 7.347e+22, 0, 1)); // moon
+
+        glGenBuffers(1, &ssbo);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), pBuffer.data(), GL_DYNAMIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
+
+        cmptshader = ComputeShader();
+        cmptshader.create();
+        cmptshader.use();
+        glShaderStorageBlockBinding(cmptshader.id, glGetProgramResourceIndex(cmptshader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
+
         shader = Shader();
         shader.create();
+        shader.use();
+        glShaderStorageBlockBinding(shader.id, glGetProgramResourceIndex(shader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
 
         GLuint VAO;
         glGenVertexArrays(1, &VAO);
         glBindVertexArray(VAO);
 
         camera = Camera();
-
-        std::random_device rd;
-        std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-10.0f, 10.0f);
-        std::uniform_real_distribution<float> vel(-1.0f, 1.0f);
-
-        for (int i = 0; i < 10000; i++) {
-            pBuffer.push_back({ pos(rng), pos(rng), pos(rng), 1.0 });
-            pBuffer.push_back({ vel(rng), vel(rng), vel(rng), 1.0 });
-        }
-
-        glGenBuffers(1, &ssbo);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(glm::vec4), pBuffer.data(), GL_STREAM_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
-        GLuint block_index = glGetProgramResourceIndex(shader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer");
-        glShaderStorageBlockBinding(shader.id, block_index, 0);
-
         this->mainloop();
     }
 
@@ -358,7 +440,10 @@ public:
 
     static inline void on_mouseScroll(GLFWwindow* window, double x, double y) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
-        app->camera.speed += static_cast<float>(y) * (app->camera.speed / 2);
+        float change = static_cast<float>(y) * (app->camera.speed / 2);
+        if (change + app->camera.speed > 0) {
+            app->camera.speed += static_cast<float>(y) * (app->camera.speed / 2);
+        }
         app->lastSpeedChange = glfwGetTime();
     }
 
@@ -372,14 +457,14 @@ public:
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt));
-            camera.projMat(res.x, res.y, 0.1f, 10e+4, shader.id, "uMatrix");
+            camera.projMat(res.x, res.y, 0.f, 10e+10, shader.id, "uMatrix");
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
 
             ImGui::PushFont(ImGui::font);
             ImGui::SetNextWindowPos({ 10, 10 });
-            ImGui::SetNextWindowCollapsed(true, 1 << 1);
+            //ImGui::SetNextWindowCollapsed(true, 1 << 1);
             if (ImGui::Begin("Settings", nullptr,
                 ImGuiWindowFlags_NoScrollbar |
                 ImGuiWindowFlags_NoScrollWithMouse |
@@ -387,6 +472,7 @@ public:
                 ImGuiWindowFlags_NoMove
             )) {
                 ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
+                ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
             }
             ImGui::End();
 
@@ -405,14 +491,19 @@ public:
 
             glViewport(0, 0, res.x, res.y);
 
-            glUniform1d(glGetUniformLocation(shader.id, "uTimeDelta"), currentTime - lastFrame);
-            lastFrame = currentTime;
-
             ImGui::Render();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            glDrawArrays(GL_POINTS, 0, pBuffer.size() / 2);
 
+            cmptshader.use();
+            glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep);
+            glDispatchCompute(pBuffer.size(), 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            shader.use();
+            glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep);
+            glPointSize(2);
+            glDrawArrays(GL_POINTS, 0, pBuffer.size());
+            lastFrame = currentTime;
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(window);
         } while (!glfwWindowShouldClose(this->window));
