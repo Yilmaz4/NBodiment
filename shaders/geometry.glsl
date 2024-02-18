@@ -72,7 +72,7 @@ void main() {
     Particle p = read(idx[0]);
     float r = cbrt((3 * (p.mass / p.density)) / (4 * PI));
     int resolution = 10;
-    for (int i = 0; i <= resolution; i++) {
+    for (int i = 0; i < resolution; i++) {
         for (int j = 0; j <= resolution; j++) {
             float lon = map(j, 0, 10, -PI, PI);
             gl_Position = uMatrix * vec4(p.pos + polar_to_cartesian(lon, map(i + 0, 0, 10, -HALF_PI, HALF_PI), r), 1);
