@@ -303,6 +303,7 @@ class NBodiment {
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5;
     float timeStep = 0.0002f;
+    bool wireframe = false;
 public:
     NBodiment() {
         glfwInit();
@@ -352,7 +353,6 @@ public:
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
             throw Error("Failed to load GLAD");
         }
-
         
         std::random_device rd;
         std::mt19937 rng(rd());
@@ -475,6 +475,9 @@ public:
             )) {
                 ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
                 ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                if (ImGui::Checkbox("Wireframe mode", &wireframe)) {
+                    glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
+                }
             }
             ImGui::End();
 
