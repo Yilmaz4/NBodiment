@@ -239,7 +239,7 @@ public:
     glm::vec3 upvector  = { 0.f,  1.f,  0.f };
     float fov = 60.f;
     float sensitivity = 0.1f;
-    float speed = 5.f;
+    float speed = 0.2f;
 
     bool mouseLocked = false;
 
@@ -302,7 +302,7 @@ class NBodiment {
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5;
-    float timeStep = 0.0002f;
+    float timeStep = 0.0001f;
     bool wireframe = false;
 public:
     NBodiment() {
@@ -357,10 +357,10 @@ public:
         std::random_device rd;
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.f, 1.f);
-        std::uniform_real_distribution<float> vel(-0.5f, 0.5f);
-        std::uniform_real_distribution<float> mass(1e+5, 1e+7);
+        std::uniform_real_distribution<float> vel(-1.5f, 1.5f);
+        std::uniform_real_distribution<float> mass(1e+5, 1e+8);
 
-        pBuffer.push_back(Particle({ -0.001f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
+        pBuffer.push_back(Particle({ 0.f, 0.f, -0.1f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
         for (int i = 0; i < 1000; i++) {
             glm::vec4 p = { pos(rng), pos(rng), pos(rng), 0 };
             glm::vec4 v = { vel(rng), vel(rng), vel(rng), 0 };
@@ -474,7 +474,12 @@ public:
                 ImGuiWindowFlags_NoMove
             )) {
                 ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
-                ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                ImGui::SeparatorText("Simulation");
+                ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                ImGui::SeparatorText("Camera");
+                ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
+                ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
+                ImGui::SeparatorText("Debugging");
                 if (ImGui::Checkbox("Wireframe mode", &wireframe)) {
                     glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
                 }
