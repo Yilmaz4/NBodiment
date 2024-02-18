@@ -1,7 +1,7 @@
 #version 430 core
 
 layout(points) in;
-layout(points, max_vertices = 1024) out;
+layout(triangle_strip, max_vertices = 1024) out;
 
 layout(location = 1) uniform mat4 uMatrix;
 layout(location = 2) uniform vec3 cameraPos;
@@ -64,24 +64,20 @@ float map(float value, float min1, float max1, float min2, float max2) {
     return min2 + (value - min1) * (max2 - min2) / (max1 - min1);
 }
 
+vec3 polar_to_cartesian(float longitude, float latitude, float radius) {
+    return vec3(radius * sin(longitude) * cos(latitude), radius * sin(longitude) * sin(latitude), radius * cos(longitude));
+}
+
 void main() {
     Particle p = read(idx[0]);
     float r = cbrt((3 * (p.mass / p.density)) / (4 * PI));
-
-    for (int i = 0; i < 1000; i++) {
-        i -= 1;
-        i += 1;
-    }
-    int resolution = 15;
-    for (int i = 0; i < resolution; i++) {
-        float lat = map(i, 0, 10, -HALF_PI, HALF_PI);
-        for (int j = 0; j < resolution; j++) {
+    int resolution = 10;
+    for (int i = 0; i <= resolution; i++) {
+        for (int j = 0; j <= resolution; j++) {
             float lon = map(j, 0, 10, -PI, PI);
-            vec4 pos = vec4(p.pos + vec3(
-                r * sin(lon) * cos(lat),
-                r * sin(lon) * sin(lat),
-                r * cos(lon)), 1);
-            gl_Position = uMatrix * pos;
+            gl_Position = uMatrix * vec4(p.pos + polar_to_cartesian(lon, map(i + 0, 0, 10, -HALF_PI, HALF_PI), r), 1);
+            EmitVertex();
+            gl_Position = uMatrix * vec4(p.pos + polar_to_cartesian(lon, map(i + 1, 0, 10, -HALF_PI, HALF_PI), r), 1);
             EmitVertex();
         }
         EndPrimitive();

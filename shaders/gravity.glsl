@@ -53,7 +53,6 @@ void main() {
             Particle other = read(uint(i) * 12);
             vec3 dir = other.pos - p.pos;
             float distSqr = dot(dir, dir);
-            float dist = sqrt(distSqr);
             vec3 forceDir = normalize(dir);
             float forceMagnitude = G * p.mass * other.mass / distSqr;
             vec3 force = forceDir * forceMagnitude;

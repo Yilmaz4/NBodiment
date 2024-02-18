@@ -319,7 +319,7 @@ public:
         glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
         glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
 
-        window = glfwCreateWindow(res.x, res.y, "N-Body Simulation", NULL, NULL);
+        window = glfwCreateWindow(res.x, res.y, "N-Body Simulation", monitor, NULL);
         if (window == nullptr) {
             throw Error("Failed to create OpenGL context");
         }
@@ -357,11 +357,11 @@ public:
         std::random_device rd;
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.f, 1.f);
-        std::uniform_real_distribution<float> vel(-1.5f, 1.5f);
-        std::uniform_real_distribution<float> mass(1e+1, 1e+5);
+        std::uniform_real_distribution<float> vel(-0.5f, 0.5f);
+        std::uniform_real_distribution<float> mass(1e+5, 1e+7);
 
-        pBuffer.push_back(Particle({-0.001f, 0.f, 0.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1e+10, 0.5, 1));
-        for (int i = 0; i < 500; i++) {
+        pBuffer.push_back(Particle({ -0.001f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
+        for (int i = 0; i < 1000; i++) {
             glm::vec4 p = { pos(rng), pos(rng), pos(rng), 0 };
             glm::vec4 v = { vel(rng), vel(rng), vel(rng), 0 };
             pBuffer.push_back(Particle({
@@ -370,7 +370,7 @@ public:
                 .acc = {0.f, 0.f, 0.f},
                 .mass = mass(rng),
                 .temp = 0.5,
-                .density = 1e+11
+                .density = 1e+16
             }));
         }
         
