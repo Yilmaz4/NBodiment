@@ -303,7 +303,7 @@ class NBodiment {
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5;
-    float timeStep = 0.0001f;
+    float timeStep = 0.1f;
     bool wireframe = false;
 public:
     NBodiment() {
@@ -520,11 +520,11 @@ public:
             camera.projMat(res.x, res.y, 0.f, 1e+6, shader.id, "uMatrix");
 
             cmptshader.use();
-            glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep);
+            glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             shader.use();
-            glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep);
+            glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
             glPointSize(2);
             glDrawArrays(GL_POINTS, 0, pBuffer.size());
             lastFrame = currentTime;
