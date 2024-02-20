@@ -298,6 +298,7 @@ class NBodiment {
     GLFWmonitor* monitor;
 
     glm::ivec2 res;
+    glm::ivec2 pos = { 60, 60 };
     std::vector<Particle> pBuffer;
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
@@ -361,7 +362,7 @@ public:
         std::uniform_real_distribution<float> mass(1e+5, 1e+8);
 
         pBuffer.push_back(Particle({ 0.f, 0.f, -0.1f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < 500; i++) {
             glm::vec4 p = { pos(rng), pos(rng), pos(rng), 0 };
             glm::vec4 v = { vel(rng), vel(rng), vel(rng), 0 };
             pBuffer.push_back(Particle({
@@ -420,6 +421,18 @@ public:
                 app->camera.mouseLocked ^= 1;
                 glfwGetCursorPos(window, &app->prevMousePos.x, &app->prevMousePos.y);
                 glfwSetInputMode(window, GLFW_CURSOR, app->camera.mouseLocked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+                break;
+            case GLFW_KEY_F11:
+                if (glfwGetWindowMonitor(window) == nullptr) {
+                    const GLFWvidmode* mode = glfwGetVideoMode(app->monitor);
+                    glfwGetWindowPos(window, &app->pos.x, &app->pos.y);
+                    app->res = { mode->width, mode->height };
+                    glfwSetWindowMonitor(window, app->monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+                }
+                else {
+                    app->res = { 600, 600 };
+                    glfwSetWindowMonitor(window, nullptr, app->pos.x, app->pos.y, app->res.x, app->res.y, 0);
+                }
             }
             break;
         case GLFW_RELEASE:
@@ -459,7 +472,6 @@ public:
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt));
-            camera.projMat(res.x, res.y, 0.f, 1e+6, shader.id, "uMatrix");
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
@@ -504,6 +516,8 @@ public:
             ImGui::Render();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
+
+            camera.projMat(res.x, res.y, 0.f, 1e+6, shader.id, "uMatrix");
 
             cmptshader.use();
             glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep);
