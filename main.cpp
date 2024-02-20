@@ -259,9 +259,9 @@ public:
         upvec.y = sin(glm::radians(pitch + 90));
         upvec.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
         position += glm::vec3({
-            speed * dt * (keys[0] && !keys[2] ?  1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
-            speed * dt * (keys[4] && !keys[5] ?  1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
-            glm::cross(upvec, direction) * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * speed * dt
+            speed * dt * (keys[0] && !keys[2] ? 1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
+            speed * dt * (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
+            speed * dt * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * glm::cross(upvec, direction)
         });
     }
 
@@ -463,7 +463,7 @@ public:
     }
 
     void mainloop() {
-        double lastFrame = glfwGetTime();
+        double lastFrame = 0;
         double fps = 0;
         do {
             double currentTime = glfwGetTime();
