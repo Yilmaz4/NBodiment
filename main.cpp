@@ -322,6 +322,7 @@ public:
         glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
         glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
         glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+        glfwWindowHint(GLFW_SAMPLES, 4);
 
         window = glfwCreateWindow(res.x, res.y, "N-Body Simulation", monitor, NULL);
         if (window == nullptr) {
@@ -361,7 +362,7 @@ public:
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.f, 1.f);
         std::uniform_real_distribution<float> vel(-1.5f, 1.5f);
-        std::uniform_real_distribution<float> mass(1e+5, 1e+8);
+        std::uniform_real_distribution<float> mass(1e+5, 1e+9);
 
         //pBuffer.push_back(Particle({ 0.f, 0.f, -0.1f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
         for (int i = 0; i < 1000; i++) {
@@ -402,6 +403,7 @@ public:
         glBindVertexArray(VAO);
 
         glEnable(GL_DEPTH_TEST);
+        glEnable(GL_MULTISAMPLE);
 
         camera = Camera();
         this->mainloop();
