@@ -44,6 +44,7 @@ void write(uint i, Particle p) {
 }
 
 void main() {
+    if (uTimeDelta == 0) return;
     Particle p = read(gl_GlobalInvocationID.x * 12);
     uint numParticles = gl_NumWorkGroups.x;
 
