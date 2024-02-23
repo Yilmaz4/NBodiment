@@ -68,23 +68,20 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\fragment.glsl">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="shaders\vertex.glsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\geometry.glsl">
-      <Filter>Shaders</Filter>
+      <Filter>Resources\Shaders</Filter>
     </None>
     <None Include="shaders\gravity.glsl">
-      <Filter>Shaders</Filter>
+      <Filter>Resources\Shaders</Filter>
+    </None>
+    <None Include="shaders\geometry.glsl">
+      <Filter>Resources\Shaders</Filter>
+    </None>
+    <None Include="shaders\fragment.glsl">
+      <Filter>Resources\Shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Filter Include="Shaders">
-      <UniqueIdentifier>{bdccf98a-afe4-46d3-bc65-582daea8d146}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Headers">
       <UniqueIdentifier>{24928274-a807-46de-90e1-3c0cde9b1d02}</UniqueIdentifier>
     </Filter>
@@ -94,10 +91,19 @@
     <Filter Include="Source Files\ImGui">
       <UniqueIdentifier>{d74456e3-6461-45c5-abe4-d5d2a2505361}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{bdccf98a-afe4-46d3-bc65-582daea8d146}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources\Shaders">
+      <UniqueIdentifier>{03cef03c-e707-4101-8c86-35b49fb0b82b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources\Skybox">
+      <UniqueIdentifier>{1ddc4d80-5218-49ef-9a67-b5b1a4e6f5ff}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="shaders\NBodiment.rc">
-      <Filter>Shaders</Filter>
+      <Filter>Resources</Filter>
     </ResourceCompile>
   </ItemGroup>
 </Project>
