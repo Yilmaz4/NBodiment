@@ -402,6 +402,11 @@ public:
         glGenVertexArrays(1, &VAO);
         glBindVertexArray(VAO);
 
+        unsigned int skyboxID;
+        glGenTextures(1, &skyboxID);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxID);
+
+
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_MULTISAMPLE);
 
@@ -449,8 +454,6 @@ public:
 
     static inline void on_mouseMove(GLFWwindow* window, double x, double y) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
-        if (ImGui::GetIO().WantCaptureMouse)
-            return;
         if (app->camera.mouseLocked) {
             float xoffset = x - app->prevMousePos.x;
             float yoffset = app->prevMousePos.y - y;
@@ -479,37 +482,40 @@ public:
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt));
+            bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
+            if (!camera.mouseLocked) {
+                ImGui::PushFont(ImGui::font);
+                ImGui::SetNextWindowPos({ 10, 10 });
+                //ImGui::SetNextWindowCollapsed(true, 1 << 1);
+                if (ImGui::Begin("Settings", nullptr,
+                    ImGuiWindowFlags_NoScrollbar |
+                    ImGuiWindowFlags_NoScrollWithMouse |
+                    ImGuiWindowFlags_AlwaysAutoResize |
+                    ImGuiWindowFlags_NoMove
+                )) {
+                    ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
+                    ImGui::SeparatorText("Simulation");
+                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g seconds");
+                    ImGui::SeparatorText("Environment");
+                    if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
+                        glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
 
-            ImGui::PushFont(ImGui::font);
-            ImGui::SetNextWindowPos({ 10, 10 });
-            //ImGui::SetNextWindowCollapsed(true, 1 << 1);
-            if (ImGui::Begin("Settings", nullptr,
-                ImGuiWindowFlags_NoScrollbar |
-                ImGuiWindowFlags_NoScrollWithMouse |
-                ImGuiWindowFlags_AlwaysAutoResize |
-                ImGuiWindowFlags_NoMove
-            )) {
-                ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
-                ImGui::SeparatorText("Simulation");
-                ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g seconds");
-                ImGui::SeparatorText("Environment");
-                if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
-                    glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
-
-                ImGui::SeparatorText("Camera");
-                ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
-                ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
-                ImGui::SeparatorText("Debugging");
-                if (ImGui::Checkbox("Wireframe mode", &wireframe)) {
-                    glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
+                    ImGui::SeparatorText("Camera");
+                    ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
+                    ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
+                    ImGui::SeparatorText("Debugging");
+                    if (ImGui::Checkbox("Wireframe mode", &wireframe)) {
+                        glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
+                    }
                 }
+                ImGui::PopFont();
+                ImGui::End();
             }
-            ImGui::End();
-
             if (currentTime - lastSpeedChange < 2.0) {
+                ImGui::PushFont(ImGui::font);
                 ImGui::Begin("##speed", nullptr,
                     ImGuiWindowFlags_AlwaysAutoResize |
                     ImGuiWindowFlags_NoCollapse |
@@ -518,12 +524,9 @@ public:
                 );
                 ImGui::Text("Speed: %.3g m/s", camera.speed);
                 ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
+                ImGui::PopFont();
                 ImGui::End();
             }
-            ImGui::PopFont();
-
-            glViewport(0, 0, res.x, res.y);
-
             ImGui::Render();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
