@@ -8,6 +8,8 @@ layout(location = 2) uniform vec3 cameraPos;
 
 in uint idx[];
 
+out vec3 normal;
+
 const float PI = 3.14159265359;
 const float HALF_PI = PI / 2.0;
 
@@ -71,13 +73,17 @@ vec3 polar_to_cartesian(float longitude, float latitude, float radius) {
 void main() {
     Particle p = read(idx[0]);
     float r = cbrt((3 * (p.mass / p.density)) / (4 * PI));
-    int resolution = 10;
+    int resolution = 8;
     for (int i = 0; i < resolution; i++) {
         for (int j = 0; j <= resolution; j++) {
-            float lon = map(j, 0, 10, -PI, PI);
-            gl_Position = uMatrix * vec4(p.pos + polar_to_cartesian(lon, map(i + 0, 0, 10, -HALF_PI, HALF_PI), r), 1);
+            float lon = map(j, 0, resolution, -PI, PI);
+            vec3 cartesian = polar_to_cartesian(lon, map(i + 0, 0, resolution, -HALF_PI, HALF_PI), r);
+            gl_Position = uMatrix * vec4(p.pos + cartesian, 1);
+            normal = normalize(cartesian);
             EmitVertex();
-            gl_Position = uMatrix * vec4(p.pos + polar_to_cartesian(lon, map(i + 1, 0, 10, -HALF_PI, HALF_PI), r), 1);
+            cartesian = polar_to_cartesian(lon, map(i + 1, 0, resolution, -HALF_PI, HALF_PI), r);
+            gl_Position = uMatrix * vec4(p.pos + cartesian, 1);
+            normal = normalize(cartesian);
             EmitVertex();
         }
         EndPrimitive();

@@ -48,5 +48,6 @@ void main() {
     p.vel += p.acc * uTimeDelta;
     p.pos += p.vel * uTimeDelta;
     gl_Position = uMatrix * vec4(p.pos, 1);
+    
     write(idx, p);
 }
