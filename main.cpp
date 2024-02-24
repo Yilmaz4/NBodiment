@@ -422,7 +422,9 @@ class NBodiment {
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5;
     float timeStep = 0.05f;
+
     bool wireframe = false;
+    bool showMilkyway = true;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
 public:
@@ -480,10 +482,10 @@ public:
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.f, 1.f);
         std::uniform_real_distribution<float> vel(-1.5f, 1.5f);
-        std::uniform_real_distribution<float> mass(1e+5, 1e+7);
+        std::uniform_real_distribution<float> mass(1e+4, 1e+6);
 
         pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < 5000; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             glm::vec3 v = { vel(rng), vel(rng), vel(rng) };
             pBuffer.push_back(Particle({
@@ -614,6 +616,7 @@ public:
                     ImGui::SeparatorText("Simulation");
                     ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g seconds");
                     ImGui::SeparatorText("Environment");
+                    ImGui::Checkbox("Milky way background", &showMilkyway);
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
                         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
 
@@ -643,12 +646,14 @@ public:
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            glDepthFunc(GL_LEQUAL);
-            skybox.use();
-            camera.projMat(res.x, res.y, 0.0001f, 1e+6, skybox.id, "uMatrix", true);
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-            glBindVertexArray(vao);
-            glDepthFunc(GL_LESS);
+            if (showMilkyway) {
+                glDepthFunc(GL_LEQUAL);
+                skybox.use();
+                camera.projMat(res.x, res.y, 0.0001f, 1e+6, skybox.id, "uMatrix", true);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+                glBindVertexArray(vao);
+                glDepthFunc(GL_LESS);
+            }
 
             cmptshader.use();
             glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
