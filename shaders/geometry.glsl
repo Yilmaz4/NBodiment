@@ -1,7 +1,7 @@
 #version 430 core
 
 layout(points) in;
-layout(triangle_strip, max_vertices = 1024) out;
+layout(triangle_strip, max_vertices = 256) out;
 
 layout(location = 1) uniform mat4 uMatrix;
 layout(location = 2) uniform vec3 cameraPos;
@@ -9,6 +9,7 @@ layout(location = 2) uniform vec3 cameraPos;
 in uint idx[];
 
 out vec3 normal;
+out uint pIdx;
 
 const float PI = 3.14159265359;
 const float HALF_PI = PI / 2.0;
@@ -71,6 +72,7 @@ vec3 polar_to_cartesian(float longitude, float latitude, float radius) {
 }
 
 void main() {
+    pIdx = idx[0];
     Particle p = read(idx[0]);
     float r = cbrt((3 * (p.mass / p.density)) / (4 * PI));
     int resolution = 8;

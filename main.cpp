@@ -1,11 +1,14 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
+#define STB_IMAGE_IMPLEMENTATION
+
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <imgui_internal.h>
-
+#include <stb/stb_image.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -14,6 +17,7 @@
 #include <glm/gtx/string_cast.hpp>
 
 #include <Windows.h>
+#include <filesystem>
 #include <exception>
 #include <string>
 #include <vector>
@@ -132,11 +136,11 @@ public:
     }
     void display() {
         MessageBoxW(NULL, msg, L"Error", MB_OK | MB_ICONERROR);
+        exit(1);
     }
 };
 
 #include "resource.h"
-#include <bitset>
 
 class Shader {
     GLuint vertexShader;
@@ -155,12 +159,20 @@ protected:
         res[size] = '\0';
         return res;
     }
-public:
-    GLuint id;
-    inline void create() {
+
+    static inline void check_for_errors(GLuint shader) {
         int success;
         char infoLog[1024];
-
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+        if (!success) {
+            glGetShaderInfoLog(shader, 1024, NULL, infoLog);
+            throw Error(infoLog);
+        }
+    }
+public:
+    GLuint id;
+    
+    inline void create() {
         char* vertexSource = this->read_resource(IDR_VRTX);
         char* geometrySource = this->read_resource(IDR_GEOM);
         char* fragmentSource = this->read_resource(IDR_FRAG);
@@ -168,29 +180,17 @@ public:
         vertexShader = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertexShader, 1, &vertexSource, NULL);
         glCompileShader(vertexShader);
-        glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-        if (!success) {
-            glGetShaderInfoLog(vertexShader, 1024, NULL, infoLog);
-            throw Error(infoLog);
-        }
+        check_for_errors(vertexShader);
 
         geometryShader = glCreateShader(GL_GEOMETRY_SHADER);
         glShaderSource(geometryShader, 1, &geometrySource, NULL);
         glCompileShader(geometryShader);
-        glGetShaderiv(geometryShader, GL_COMPILE_STATUS, &success);
-        if (!success) {
-            glGetShaderInfoLog(geometryShader, 1024, NULL, infoLog);
-            throw Error(infoLog);
-        }
+        check_for_errors(geometryShader);
 
         fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
         glCompileShader(fragmentShader);
-        glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-        if (!success) {
-            glGetShaderInfoLog(fragmentShader, 1024, NULL, infoLog);
-            throw Error(infoLog);
-        }
+        check_for_errors(fragmentShader);
 
         id = glCreateProgram();
         glAttachShader(id, vertexShader);
@@ -230,11 +230,126 @@ public:
     }
 };
 
+class Skybox : public Shader {
+    GLuint vertexShader;
+    GLuint fragmentShader;
+    GLuint vao;
+    GLuint vbo;
+    GLuint textureID;
+
+    float skyboxVertices[108] = {
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f
+    };
+public:
+    inline void load_textures() {
+        int width, height, nrChannels;
+        unsigned char* data;
+        for (int i = 0; i < 6; i++) {
+            std::string path = std::format("skybox/{}.png", i);
+            if (!std::filesystem::exists(path)) {
+                throw Error("Skybox not available");
+            }
+            data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
+        }
+    }
+
+    inline void create() {
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+        load_textures();
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+        char* vertexSource = this->read_resource(IDR_SKYV);
+        char* fragmentSource = this->read_resource(IDR_SKYF);
+
+        vertexShader = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertexShader, 1, &vertexSource, NULL);
+        glCompileShader(vertexShader);
+        check_for_errors(vertexShader);
+
+        fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
+        glCompileShader(fragmentShader);
+        check_for_errors(fragmentShader);
+
+        id = glCreateProgram();
+        glAttachShader(id, vertexShader);
+        glAttachShader(id, fragmentShader);
+        glLinkProgram(id);
+
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+
+        glUniform1i(glGetUniformLocation(id, "skybox"), 0);
+    }
+
+    inline void use() {
+        glUseProgram(id);
+        glBindVertexArray(vao);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+    }
+};
+
 class Camera {
     float yaw = -90.0f;
     float pitch = 0.0f;
 public:
-    glm::vec3 position  = { 0.f,  0.f,  0.f };
+    glm::vec3 position  = { 0.f,  0.f,  1.f };
     glm::vec3 direction = { 0.f,  0.f, -1.f };
     glm::vec3 upvector  = { 0.f,  1.f,  0.f };
     float fov = 60.f;
@@ -243,11 +358,12 @@ public:
 
     bool mouseLocked = false;
 
-    void projMat(float w, float h, float nearPlane, float farPlane, GLuint shaderID, const char* uniform) {
+    void projMat(float w, float h, float nearPlane, float farPlane, const GLuint shaderID, const char* uniform, bool no_translation = false) {
         auto view = glm::mat4(1.f);
         auto proj = glm::mat4(1.f);
 
         view = glm::lookAt(position, direction + position, { 0.f, 1.f, 0.f });
+        if (no_translation) view = glm::mat4(glm::mat3(view));
         proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
 
         glUniformMatrix4fv(glGetUniformLocation(shaderID, uniform), 1, GL_FALSE, glm::value_ptr(proj * view));
@@ -291,8 +407,10 @@ struct Particle {
 class NBodiment {
     Shader shader;
     ComputeShader cmptshader;
+    Skybox skybox;
     Camera camera;
     GLuint ssbo;
+    GLuint vao;
 
     GLFWwindow* window;
     GLFWmonitor* monitor;
@@ -362,12 +480,12 @@ public:
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.f, 1.f);
         std::uniform_real_distribution<float> vel(-1.5f, 1.5f);
-        std::uniform_real_distribution<float> mass(1e+5, 1e+9);
+        std::uniform_real_distribution<float> mass(1e+5, 1e+7);
 
-        //pBuffer.push_back(Particle({ 0.f, 0.f, -0.1f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
+        pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
         for (int i = 0; i < 1000; i++) {
-            glm::vec4 p = { pos(rng), pos(rng), pos(rng), 0 };
-            glm::vec4 v = { vel(rng), vel(rng), vel(rng), 0 };
+            glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
+            glm::vec3 v = { vel(rng), vel(rng), vel(rng) };
             pBuffer.push_back(Particle({
                 .pos = p,
                 .vel = v,
@@ -391,6 +509,9 @@ public:
         cmptshader.use();
         glShaderStorageBlockBinding(cmptshader.id, glGetProgramResourceIndex(cmptshader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
 
+        skybox = Skybox();
+        skybox.create();
+
         shader = Shader();
         shader.create();
         shader.use();
@@ -398,14 +519,7 @@ public:
         glUniform3f(glGetUniformLocation(shader.id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
 
-        GLuint VAO;
-        glGenVertexArrays(1, &VAO);
-        glBindVertexArray(VAO);
-
-        unsigned int skyboxID;
-        glGenTextures(1, &skyboxID);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxID);
-
+        glGenVertexArrays(1, &vao);
 
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_MULTISAMPLE);
@@ -467,7 +581,7 @@ public:
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
         float change = static_cast<float>(y) * (app->camera.speed / 2);
         if (change + app->camera.speed > 0) {
-            app->camera.speed += static_cast<float>(y) * (app->camera.speed / 2);
+            app->camera.speed += change;
         }
         app->lastSpeedChange = glfwGetTime();
     }
@@ -507,9 +621,7 @@ public:
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
                     ImGui::SeparatorText("Debugging");
-                    if (ImGui::Checkbox("Wireframe mode", &wireframe)) {
-                        glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
-                    }
+                    ImGui::Checkbox("Wireframe mode", &wireframe);
                 }
                 ImGui::PopFont();
                 ImGui::End();
@@ -531,16 +643,24 @@ public:
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            camera.projMat(res.x, res.y, 0.0001f, 1e+6, shader.id, "uMatrix");
+            glDepthFunc(GL_LEQUAL);
+            skybox.use();
+            camera.projMat(res.x, res.y, 0.0001f, 1e+6, skybox.id, "uMatrix", true);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glBindVertexArray(vao);
+            glDepthFunc(GL_LESS);
 
             cmptshader.use();
             glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             shader.use();
+            camera.projMat(res.x, res.y, 0.0001f, 1e+6, shader.id, "uMatrix", false);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
-            glPointSize(2);
+            glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
             glDrawArrays(GL_POINTS, 0, pBuffer.size());
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
             lastFrame = currentTime;
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(window);

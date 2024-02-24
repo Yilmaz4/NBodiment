@@ -45,8 +45,6 @@ out uint idx;
 void main() {
     idx = gl_VertexID * 12;
     Particle p = read(idx);
-    p.vel += p.acc * uTimeDelta;
-    p.pos += p.vel * uTimeDelta;
     gl_Position = uMatrix * vec4(p.pos, 1);
     
     write(idx, p);

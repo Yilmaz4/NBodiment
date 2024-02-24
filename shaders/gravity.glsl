@@ -62,7 +62,8 @@ void main() {
     }
 
     p.acc = totalAcc;
-
+    p.vel += p.acc * uTimeDelta;
+    p.pos += p.vel * uTimeDelta;
 
     write(gl_GlobalInvocationID.x * 12, p);
 }
