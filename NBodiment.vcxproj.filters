@@ -80,6 +80,12 @@
     <None Include="shaders\fragment.glsl">
       <Filter>Resources\Shaders</Filter>
     </None>
+    <None Include="shaders\skyboxFragment.glsl">
+      <Filter>Resources\Shaders\Skybox Shaders</Filter>
+    </None>
+    <None Include="shaders\skyboxVertex.glsl">
+      <Filter>Resources\Shaders\Skybox Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Headers">
@@ -100,10 +106,33 @@
     <Filter Include="Resources\Skybox">
       <UniqueIdentifier>{1ddc4d80-5218-49ef-9a67-b5b1a4e6f5ff}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resources\Shaders\Skybox Shaders">
+      <UniqueIdentifier>{996bda79-7338-4d13-bf9d-f702def032d0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="shaders\NBodiment.rc">
       <Filter>Resources</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="skybox\0.png">
+      <Filter>Resources\Skybox</Filter>
+    </Image>
+    <Image Include="skybox\1.png">
+      <Filter>Resources\Skybox</Filter>
+    </Image>
+    <Image Include="skybox\2.png">
+      <Filter>Resources\Skybox</Filter>
+    </Image>
+    <Image Include="skybox\3.png">
+      <Filter>Resources\Skybox</Filter>
+    </Image>
+    <Image Include="skybox\4.png">
+      <Filter>Resources\Skybox</Filter>
+    </Image>
+    <Image Include="skybox\5.png">
+      <Filter>Resources\Skybox</Filter>
+    </Image>
   </ItemGroup>
 </Project>

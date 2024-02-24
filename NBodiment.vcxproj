@@ -183,10 +183,20 @@
     <None Include="shaders\fragment.glsl" />
     <None Include="shaders\geometry.glsl" />
     <None Include="shaders\gravity.glsl" />
+    <None Include="shaders\skyboxFragment.glsl" />
+    <None Include="shaders\skyboxVertex.glsl" />
     <None Include="shaders\vertex.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="shaders\NBodiment.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="skybox\0.png" />
+    <Image Include="skybox\1.png" />
+    <Image Include="skybox\2.png" />
+    <Image Include="skybox\3.png" />
+    <Image Include="skybox\4.png" />
+    <Image Include="skybox\5.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
