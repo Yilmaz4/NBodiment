@@ -1,7 +1,7 @@
 #version 430 core
 
 layout(points) in;
-layout(triangle_strip, max_vertices = 256) out;
+layout(triangle_strip, max_vertices = 512) out;
 
 layout(location = 1) uniform mat4 uMatrix;
 layout(location = 2) uniform vec3 cameraPos;
@@ -75,15 +75,15 @@ void main() {
     pIdx = idx[0];
     Particle p = read(idx[0]);
     float r = cbrt((3 * (p.mass / p.density)) / (4 * PI));
-    int resolution = 8;
-    for (int i = 0; i < resolution; i++) {
+    int resolution = 10; // above this just fails for some reason, probably hitting the vertex limit
+    for (int i = 0; i < resolution / 2; i++) {
         for (int j = 0; j <= resolution; j++) {
             float lon = map(j, 0, resolution, -PI, PI);
-            vec3 cartesian = polar_to_cartesian(lon, map(i + 0, 0, resolution, -HALF_PI, HALF_PI), r);
+            vec3 cartesian = polar_to_cartesian(lon, map(i + 0, 0, resolution / 2, -HALF_PI, HALF_PI), r);
             gl_Position = uMatrix * vec4(p.pos + cartesian, 1);
             normal = normalize(cartesian);
             EmitVertex();
-            cartesian = polar_to_cartesian(lon, map(i + 1, 0, resolution, -HALF_PI, HALF_PI), r);
+            cartesian = polar_to_cartesian(lon, map(i + 1, 0, resolution / 2, -HALF_PI, HALF_PI), r);
             gl_Position = uMatrix * vec4(p.pos + cartesian, 1);
             normal = normalize(cartesian);
             EmitVertex();
