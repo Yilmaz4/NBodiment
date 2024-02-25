@@ -8,7 +8,7 @@ struct Particle {
     vec3 acc;
     float mass;
     float temp;
-    float density;
+    float radius;
 };
 
 layout(std430, binding = 0) volatile buffer vBuffer {
@@ -40,7 +40,7 @@ void write(uint i, Particle p) {
     vs[i + 8] = p.acc.z;
     vs[i + 9] = p.mass;
     vs[i + 10] = p.temp;
-    vs[i + 11] = p.density;
+    vs[i + 11] = p.radius;
 }
 
 void main() {
@@ -54,6 +54,15 @@ void main() {
             Particle other = read(uint(i) * 12);
             vec3 dir = other.pos - p.pos;
             float distSqr = dot(dir, dir);
+            float minDistSqr = (p.radius + other.radius) * (p.radius + other.radius);
+            if (distSqr <= minDistSqr) {
+                vec3 relVel = other.vel - p.vel;
+                float dotProduct = dot(relVel, normalize(dir));
+                vec3 velNormal = dotProduct * normalize(dir);
+                float impulseScalar = (-2 * dot(velNormal, normalize(dir))) / (1.0 / p.mass + 1.0 / other.mass);
+                p.vel -= impulseScalar / p.mass * normalize(dir);
+                other.vel += impulseScalar / other.mass * normalize(dir);
+            }
             vec3 forceDir = normalize(dir);
             float forceMagnitude = G * p.mass * other.mass / distSqr;
             vec3 force = forceDir * forceMagnitude;
