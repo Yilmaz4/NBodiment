@@ -62,17 +62,14 @@ uniform vec3 ambientLight;
 out vec4 fragColor;
 
 void main() {
-    
-    float aspectRatio = float(screenSize.x) / float(screenSize.y);
     vec2 coord = gl_FragCoord.xy / screenSize;
-
     vec3 direction = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
 
     int closest = -1;
     float minT = 1.f / 0.f;
     for (int i = 0; i < numParticles * 12; i += 12) {
         Particle p = read(i);
-
+        if (p.radius == 0) continue;
         vec3 origin = cameraPos - p.pos;
         float a = dot(direction, direction);
         float b = 2.f * dot(origin, direction);

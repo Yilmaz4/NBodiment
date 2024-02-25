@@ -46,25 +46,33 @@ void write(uint i, Particle p) {
 void main() {
     if (uTimeDelta == 0) return;
     Particle p = read(gl_GlobalInvocationID.x * 12);
-    uint numParticles = gl_NumWorkGroups.x;
-
+    if (p.mass == 0) return;
     vec3 totalAcc = vec3(0.0);
-    for (int i = 0; i < numParticles; ++i) {
+    for (int i = 0; i < gl_NumWorkGroups.x; ++i) {
         if (i != int(gl_GlobalInvocationID.x)) {
-            Particle other = read(uint(i) * 12);
-            vec3 dir = other.pos - p.pos;
+            Particle q = read(uint(i) * 12);
+            if (q.mass == 0) continue;
+            vec3 dir = q.pos - p.pos;
             float distSqr = dot(dir, dir);
-            float minDistSqr = (p.radius + other.radius) * (p.radius + other.radius);
+            float minDistSqr = (p.radius + q.radius) * (p.radius + q.radius);
             if (distSqr <= minDistSqr) {
-                vec3 relVel = other.vel - p.vel;
-                float dotProduct = dot(relVel, normalize(dir));
-                vec3 velNormal = dotProduct * normalize(dir);
-                float impulseScalar = (-2 * dot(velNormal, normalize(dir))) / (1.0 / p.mass + 1.0 / other.mass);
-                p.vel -= impulseScalar / p.mass * normalize(dir);
-                other.vel += impulseScalar / other.mass * normalize(dir);
+                if (p.mass > q.mass) {
+                    p.mass += q.mass;
+                    q.mass = 0;
+                    q.radius = 0;
+                    write(uint(i) * 12, q);
+                }
+                else {
+                    q.mass += p.mass;
+                    p.mass = 0;
+                    p.radius = 0;
+                    write(uint(i) * 12, q);
+                    write(gl_GlobalInvocationID.x * 12, p);
+                    return;
+                }
             }
             vec3 forceDir = normalize(dir);
-            float forceMagnitude = G * p.mass * other.mass / distSqr;
+            float forceMagnitude = G * p.mass * q.mass / distSqr;
             vec3 force = forceDir * forceMagnitude;
             totalAcc += force / p.mass;
         }

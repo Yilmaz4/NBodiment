@@ -513,7 +513,7 @@ public:
         std::uniform_real_distribution<float> mass(1e+7, 1e+8);
 
         pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 1000; i++) {
             float m = mass(rng);
             float r = cbrt((3.f * (m / 10e+14f)) / (4.f * M_PI));
             //float r = 0.1f;
@@ -526,9 +526,6 @@ public:
                 .radius = r
             }));
         }
-        
-        //pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 5.972e+24, 0, 1)); // earth
-        //pBuffer.push_back(Particle({ 384400.f, 0.f, 0.f }, { 0.f, 0.f, 1022.f }, { 0.f, 0.f, 0.f }, 7.347e+22, 0, 1)); // moon
 
         glGenBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
