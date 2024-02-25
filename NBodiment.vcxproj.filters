@@ -71,9 +71,6 @@
     <None Include="shaders\vertex.glsl">
       <Filter>Resources\Shaders</Filter>
     </None>
-    <None Include="shaders\geometry.glsl">
-      <Filter>Resources\Shaders</Filter>
-    </None>
     <None Include="shaders\fragment.glsl">
       <Filter>Resources\Shaders</Filter>
     </None>
@@ -82,6 +79,9 @@
     </None>
     <None Include="shaders\skyboxVertex.glsl">
       <Filter>Resources\Shaders\Skybox Shaders</Filter>
+    </None>
+    <None Include="shaders\gravity.glsl">
+      <Filter>Resources\Shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
