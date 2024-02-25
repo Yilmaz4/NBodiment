@@ -509,7 +509,7 @@ public:
         std::random_device rd;
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
-        std::uniform_real_distribution<float> vel(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> vel(-0.0f, 0.0f);
         std::uniform_real_distribution<float> mass(1e+7, 1e+8);
 
         pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
@@ -618,7 +618,7 @@ public:
 
     static inline void on_mousePress(GLFWwindow* window, int button, int action, int mods) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
-
+        // implement double-click to follow & orbit
     }
 
     void mainloop() {
@@ -729,6 +729,7 @@ public:
                 ImGui::Text("Mass: %.9g kg", selected.mass);
                 ImGui::Text(reinterpret_cast<const char*>(u8"Temperature: %.9g\u00b0""C"), selected.temp);
                 ImGui::Text("Radius: %.9g m", selected.radius);
+                ImGui::Text("Density: %.9g kg/m^3", selected.mass / (4.f * M_PI * pow(selected.radius, 3) / 3.f));
                 ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
                 ImGui::PopFont();
                 ImGui::End();
