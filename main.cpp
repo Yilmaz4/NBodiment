@@ -443,7 +443,7 @@ class NBodiment {
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5;
-    float timeStep = 0.05f;
+    float timeStep = 0.00f;
 
     bool showMilkyway = true;
     Particle selected;
@@ -509,21 +509,19 @@ public:
         std::random_device rd;
         std::mt19937 rng(rd());
         std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
-        std::uniform_real_distribution<float> vel(-0.0f, 0.0f);
-        std::uniform_real_distribution<float> mass(1e+7, 1e+8);
+        std::uniform_real_distribution<float> mass(5e+7, 1e+8);
 
-        pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
-        for (int i = 0; i < 1000; i++) {
+        pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 30, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
+        for (int i = 0; i < 50; i++) {
+            glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             float m = mass(rng);
-            float r = cbrt((3.f * (m / 10e+14f)) / (4.f * M_PI));
-            //float r = 0.1f;
             pBuffer.push_back(Particle({
-                .pos = { pos(rng), pos(rng), pos(rng) },
-                .vel = { vel(rng), vel(rng), vel(rng) },
+                .pos = p,
+                .vel = glm::normalize(glm::cross(p, p + glm::vec3(0.f, 1.f, 0.f))) * sqrt(6.67430e-11f * 1e+10f / glm::length(p)), // orbital velocity
                 .acc = { 0.f, 0.f, 0.f },
                 .mass = m,
-                .temp = 0.5,
-                .radius = r
+                .temp = 30,
+                .radius = cbrt((3.f * (m / 10e+14f)) / (4.f * (float)(M_PI)))
             }));
         }
 
@@ -631,10 +629,12 @@ public:
             double dt = currentTime - lastFrame;
             fps = 1.0 / dt;
 
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-            GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-            memcpy(buffer, p, pBuffer.size() * sizeof(Particle));
-            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            if (timeStep != 0) {
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+                GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                memcpy(buffer, p, pBuffer.size() * sizeof(Particle));
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
             glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
             glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
             auto view = glm::mat4(1.f);
