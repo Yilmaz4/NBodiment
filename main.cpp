@@ -1,5 +1,6 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define STB_IMAGE_IMPLEMENTATION
+#define _USE_MATH_DEFINES
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -23,6 +24,7 @@
 #include <vector>
 #include <random>
 #include <iostream>
+#include <math.h>
 #include <bitset>
 
 namespace ImGui {
@@ -144,8 +146,17 @@ public:
 
 class Shader {
     GLuint vertexShader;
-    GLuint geometryShader;
     GLuint fragmentShader;
+    GLuint vao, vbo;
+
+    float vertices[12] = {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f,  1.0f
+    };
 protected:
     static inline char* read_resource(int name) {
         HMODULE handle = GetModuleHandleW(NULL);
@@ -172,20 +183,14 @@ protected:
 public:
     GLuint id;
     
-    inline void create() {
+    inline virtual void create() {
         char* vertexSource = this->read_resource(IDR_VRTX);
-        char* geometrySource = this->read_resource(IDR_GEOM);
         char* fragmentSource = this->read_resource(IDR_FRAG);
 
         vertexShader = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertexShader, 1, &vertexSource, NULL);
         glCompileShader(vertexShader);
         check_for_errors(vertexShader);
-
-        geometryShader = glCreateShader(GL_GEOMETRY_SHADER);
-        glShaderSource(geometryShader, 1, &geometrySource, NULL);
-        glCompileShader(geometryShader);
-        check_for_errors(geometryShader);
 
         fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
@@ -194,12 +199,19 @@ public:
 
         id = glCreateProgram();
         glAttachShader(id, vertexShader);
-        glAttachShader(id, geometryShader);
         glAttachShader(id, fragmentShader);
         glLinkProgram(id);
 
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, false, 2 * sizeof(float), nullptr);
+        glEnableVertexAttribArray(0);
+
         glDeleteShader(vertexShader);
-        glDeleteShader(geometryShader);
         glDeleteShader(fragmentShader);
     }
     inline void use() { glUseProgram(id); }
@@ -209,7 +221,7 @@ public:
 class ComputeShader : public Shader {
     GLuint computeShader;
 public:
-    inline void create() {
+    inline virtual void create() override {
         int success;
         char infoLog[1024];
         char* computeSource = this->read_resource(IDR_CMPT);
@@ -233,8 +245,7 @@ public:
 class Skybox : public Shader {
     GLuint vertexShader;
     GLuint fragmentShader;
-    GLuint vao;
-    GLuint vbo;
+    GLuint vao, vbo;
     GLuint textureID;
 
     float skyboxVertices[108] = {
@@ -295,7 +306,7 @@ public:
         }
     }
 
-    inline void create() {
+    inline virtual void create() override {
         glGenVertexArrays(1, &vao);
         glGenBuffers(1, &vbo);
         glBindVertexArray(vao);
@@ -346,8 +357,7 @@ public:
 };
 
 class Camera {
-    float yaw = -90.0f;
-    float pitch = 0.0f;
+    GLuint shader;
 public:
     glm::vec3 position  = { 0.f,  0.f,  1.f };
     glm::vec3 direction = { 0.f,  0.f, -1.f };
@@ -356,17 +366,23 @@ public:
     float sensitivity = 0.1f;
     float speed = 0.2f;
 
+    float yaw = -90.0f;
+    float pitch = 0.0f;
+
     bool mouseLocked = false;
 
-    void projMat(float w, float h, float nearPlane, float farPlane, const GLuint shaderID, const char* uniform, bool no_translation = false) {
+    void projMat(float w, float h, float nearPlane, float farPlane, const GLuint shaderID, bool no_translation = false) {
         auto view = glm::mat4(1.f);
         auto proj = glm::mat4(1.f);
-
+        shader = shaderID;
         view = glm::lookAt(position, direction + position, { 0.f, 1.f, 0.f });
         if (no_translation) view = glm::mat4(glm::mat3(view));
         proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
 
-        glUniformMatrix4fv(glGetUniformLocation(shaderID, uniform), 1, GL_FALSE, glm::value_ptr(proj * view));
+        glUniformMatrix4fv(glGetUniformLocation(shaderID, "viewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shaderID, "projMatrix"), 1, GL_FALSE, glm::value_ptr(proj));
+        glUniformMatrix4fv(glGetUniformLocation(shaderID, "invViewMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(view)));
+        glUniformMatrix4fv(glGetUniformLocation(shaderID, "invProjMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(proj)));
     }
 
     void processInput(std::bitset<6> keys, float dt) {
@@ -379,6 +395,8 @@ public:
             speed * dt * (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
             speed * dt * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * glm::cross(upvec, direction)
         });
+        glUniform3f(glGetUniformLocation(shader, "cameraPos"), position.x, position.y, position.z);
+        glUniform3f(glGetUniformLocation(shader, "cameraUpVec"), upvec.x, upvec.y, upvec.z);
     }
 
     void rotate(float xoffset, float yoffset) {
@@ -401,7 +419,7 @@ struct Particle {
     glm::vec3 acc;
     float mass;
     float temp;
-    float density;
+    float radius;
 };
 
 class NBodiment {
@@ -410,7 +428,6 @@ class NBodiment {
     Skybox skybox;
     Camera camera;
     GLuint ssbo;
-    GLuint vao;
 
     GLFWwindow* window;
     GLFWmonitor* monitor;
@@ -480,21 +497,22 @@ public:
         
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-1.f, 1.f);
-        std::uniform_real_distribution<float> vel(-1.5f, 1.5f);
-        std::uniform_real_distribution<float> mass(1e+4, 1e+6);
+        std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> vel(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> mass(1e+7, 1e+8);
 
-        pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, 1e+16));
-        for (int i = 0; i < 5000; i++) {
-            glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
-            glm::vec3 v = { vel(rng), vel(rng), vel(rng) };
+        pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 0.5, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
+        for (int i = 0; i < 100; i++) {
+            float m = mass(rng);
+            float r = cbrt((3.f * (m / 10e+14f)) / (4.f * M_PI));
+            //float r = 0.1f;
             pBuffer.push_back(Particle({
-                .pos = p,
-                .vel = v,
-                .acc = {0.f, 0.f, 0.f},
-                .mass = mass(rng),
+                .pos = { pos(rng), pos(rng), pos(rng) },
+                .vel = { vel(rng), vel(rng), vel(rng) },
+                .acc = { 0.f, 0.f, 0.f },
+                .mass = m,
                 .temp = 0.5,
-                .density = 1e+16
+                .radius = r
             }));
         }
         
@@ -520,11 +538,14 @@ public:
         glShaderStorageBlockBinding(shader.id, glGetProgramResourceIndex(shader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform3f(glGetUniformLocation(shader.id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
-
-        glGenVertexArrays(1, &vao);
+        glUniform1i(glGetUniformLocation(shader.id, "numParticles"), pBuffer.size());
 
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_MULTISAMPLE);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_BLEND);
+
+        on_windowResize(window, res.x, res.y);
 
         camera = Camera();
         this->mainloop();
@@ -533,6 +554,7 @@ public:
     static inline void on_windowResize(GLFWwindow* window, int w, int h) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
         glViewport(0, 0, app->res.x, app->res.y);
+        glUniform2f(glGetUniformLocation(app->shader.id, "screenSize"), w, h);
     }
 
     static inline void on_keyPress(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -540,7 +562,6 @@ public:
         switch (action) {
         case GLFW_PRESS:
             app->keys |= ((int)(key == GLFW_KEY_W) | (int)(key == GLFW_KEY_A) << 1 | (int)(key == GLFW_KEY_S) << 2 | (int)(key == GLFW_KEY_D) << 3 | (int)(key == GLFW_KEY_SPACE) << 4 | (int)(key == GLFW_KEY_LEFT_SHIFT) << 5);
-            glUniform3f(glGetUniformLocation(app->shader.id, "cameraPos"), app->camera.position.x, app->camera.position.y, app->camera.position.z);
             switch (key) {
             case GLFW_KEY_ESCAPE:
                 glfwSetWindowShouldClose(window, true);
@@ -649,9 +670,8 @@ public:
             if (showMilkyway) {
                 glDepthFunc(GL_LEQUAL);
                 skybox.use();
-                camera.projMat(res.x, res.y, 0.0001f, 1e+6, skybox.id, "uMatrix", true);
+                camera.projMat(res.x, res.y, 0.0001f, 1e+6, skybox.id, true);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
-                glBindVertexArray(vao);
                 glDepthFunc(GL_LESS);
             }
 
@@ -660,10 +680,11 @@ public:
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             shader.use();
-            camera.projMat(res.x, res.y, 0.0001f, 1e+6, shader.id, "uMatrix", false);
+            camera.projMat(res.x, res.y, 0.0001f, 1e+6, shader.id, false);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
+            glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
             glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
-            glDrawArrays(GL_POINTS, 0, pBuffer.size());
+            glDrawArrays(GL_TRIANGLES, 0, 6);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
             lastFrame = currentTime;

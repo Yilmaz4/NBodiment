@@ -9,14 +9,15 @@ struct Particle {
     vec3 acc;
     float mass;
     float temp;
-    float density;
+    float radius;
 };
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
 };
+uniform int numParticles;
 
-Particle read(uint i) {
+Particle read(int i) {
     return Particle(
         vec3(vs[i + 0], vs[i + 1], vs[i + 2]),
         vec3(vs[i + 3], vs[i + 4], vs[i + 5]),
@@ -25,7 +26,7 @@ Particle read(uint i) {
     );
 }
 
-void write(uint i, Particle p) {
+void write(int i, Particle p) {
     vs[i + 0] = p.pos.x;
     vs[i + 1] = p.pos.y;
     vs[i + 2] = p.pos.z;
@@ -37,7 +38,7 @@ void write(uint i, Particle p) {
     vs[i + 8] = p.acc.z;
     vs[i + 9] = p.mass;
     vs[i + 10] = p.temp;
-    vs[i + 11] = p.density;
+    vs[i + 11] = p.radius;
 }
 
 vec3 polar_to_cartesian(float longitude, float latitude, float radius) {
@@ -48,16 +49,50 @@ float to_radians(float degrees) {
     return degrees * PI / 180.f;
 }
 
+uniform vec2 screenSize;
+uniform float uTime;
+uniform float uTimeDelta;
+uniform mat4 projMatrix;
+uniform mat4 viewMatrix;
+uniform mat4 invProjMatrix;
+uniform mat4 invViewMatrix;
+uniform vec3 cameraPos;
+
 out vec4 fragColor;
 
-in vec3 normal;
-in uint pIdx;
-
-uniform vec3 ambientLight;
-uniform vec2 lightDir;
-
 void main() {
-    Particle p = read(pIdx);
-    vec3 c = vec3(1.0) * dot(normal, polar_to_cartesian(to_radians(lightDir.x), to_radians(lightDir.y), 1.f));
-    fragColor = vec4(c, 1.f);
+    
+    float aspectRatio = float(screenSize.x) / float(screenSize.y);
+    vec2 coord = gl_FragCoord.xy / screenSize;
+
+    vec3 rayDirection = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
+
+    int closest = -1;
+    float minT = 1.f / 0.f;
+    for (int i = 0; i < numParticles * 12; i += 12) {
+        Particle p = read(i);
+
+        vec3 rayOrigin = cameraPos - p.pos;
+        float a = dot(rayDirection, rayDirection);
+        float b = 2.f * dot(rayOrigin, rayDirection);
+        float c = dot(rayOrigin, rayOrigin) - p.radius * p.radius;
+
+        float d = b * b - 4.f * a * c;
+        if (d <= 0.f) continue;
+        float t = (-b - sqrt(d)) / (2.f * a);
+        if (t < minT && t >= 0) {
+            minT = t;
+            closest = i;
+        }
+    }
+    if (closest < 0) {
+        fragColor = vec4(0.f);
+        return;
+    }
+    Particle p = read(closest);
+    vec3 origin = cameraPos - p.pos;
+    vec3 hit = origin + rayDirection * minT;
+    vec3 normal = normalize(hit);
+
+    fragColor = vec4(vec3(1.f) * dot(polar_to_cartesian(to_radians(60), to_radians(60), 1.f), normal), 1.f);
 }
