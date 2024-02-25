@@ -57,6 +57,7 @@ uniform mat4 viewMatrix;
 uniform mat4 invProjMatrix;
 uniform mat4 invViewMatrix;
 uniform vec3 cameraPos;
+uniform vec3 ambientLight;
 
 out vec4 fragColor;
 
@@ -65,17 +66,17 @@ void main() {
     float aspectRatio = float(screenSize.x) / float(screenSize.y);
     vec2 coord = gl_FragCoord.xy / screenSize;
 
-    vec3 rayDirection = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
+    vec3 direction = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
 
     int closest = -1;
     float minT = 1.f / 0.f;
     for (int i = 0; i < numParticles * 12; i += 12) {
         Particle p = read(i);
 
-        vec3 rayOrigin = cameraPos - p.pos;
-        float a = dot(rayDirection, rayDirection);
-        float b = 2.f * dot(rayOrigin, rayDirection);
-        float c = dot(rayOrigin, rayOrigin) - p.radius * p.radius;
+        vec3 origin = cameraPos - p.pos;
+        float a = dot(direction, direction);
+        float b = 2.f * dot(origin, direction);
+        float c = dot(origin, origin) - p.radius * p.radius;
 
         float d = b * b - 4.f * a * c;
         if (d <= 0.f) continue;
@@ -91,8 +92,8 @@ void main() {
     }
     Particle p = read(closest);
     vec3 origin = cameraPos - p.pos;
-    vec3 hit = origin + rayDirection * minT;
+    vec3 hit = origin + direction * minT;
     vec3 normal = normalize(hit);
 
-    fragColor = vec4(vec3(1.f) * dot(polar_to_cartesian(to_radians(60), to_radians(60), 1.f), normal), 1.f);
+    fragColor = vec4(vec3(1.f) * ambientLight * dot(polar_to_cartesian(to_radians(60), to_radians(60), 1.f), normal), 1.f);
 }
