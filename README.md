@@ -1,5 +1,5 @@
 # NBodiment
-A gravity simulator, made in C++ and OpenGL. For my school physics project.
+A ray-traced gravitational N-body simulator, made in C++ and OpenGL. For my school physics project.
 ## Controls
 **WASD** - camera movement\
 **Space/Left Shift** - camera up/down\
