@@ -1,6 +1,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define STB_IMAGE_IMPLEMENTATION
 #define _USE_MATH_DEFINES
+#define NOMINMAX
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -26,6 +27,7 @@
 #include <iostream>
 #include <math.h>
 #include <bitset>
+#include <limits>
 
 namespace ImGui {
     ImFont* font;
@@ -362,16 +364,19 @@ public:
     glm::vec3 position  = { 0.f,  0.f,  1.f };
     glm::vec3 direction = { 0.f,  0.f, -1.f };
     glm::vec3 upvector  = { 0.f,  1.f,  0.f };
-    float fov = 60.f;
-    float sensitivity = 0.1f;
-    float speed = 0.2f;
 
     float yaw = -90.0f;
     float pitch = 0.0f;
 
+    float fov = 60.f;
+    float sensitivity = 0.1f;
+    float speed = 0.2f;
+    float farPlane = 1e+6f;
+    float nearPlane = 0.0001f;
+
     bool mouseLocked = false;
 
-    void projMat(float w, float h, float nearPlane, float farPlane, const GLuint shaderID, bool no_translation = false) {
+    void projMat(float w, float h, const GLuint shaderID, bool no_translation = false) {
         auto view = glm::mat4(1.f);
         auto proj = glm::mat4(1.f);
         shader = shaderID;
@@ -441,10 +446,16 @@ class NBodiment {
     float timeStep = 0.05f;
 
     bool showMilkyway = true;
+    Particle selected;
+    bool hoveringParticle = false;
+    bool lockedToParticle = false;
+    glm::dvec2 mousePos;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
 public:
     NBodiment() {
+        std::setlocale(LC_CTYPE, ".UTF8");
+
         glfwInit();
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -467,6 +478,7 @@ public:
         glfwMakeContextCurrent(window);
         // initialize callback functions
         glfwSetFramebufferSizeCallback(window, on_windowResize);
+        glfwSetMouseButtonCallback(window, on_mousePress);
         glfwSetKeyCallback(window, on_keyPress);
         glfwSetScrollCallback(window, on_mouseScroll);
         glfwSetCursorPosCallback(window, on_mouseMove);
@@ -547,7 +559,6 @@ public:
         on_windowResize(window, res.x, res.y);
 
         camera = Camera();
-        this->mainloop();
     }
 
     static inline void on_windowResize(GLFWwindow* window, int w, int h) {
@@ -608,17 +619,58 @@ public:
         app->lastSpeedChange = glfwGetTime();
     }
 
+    static inline void on_mousePress(GLFWwindow* window, int button, int action, int mods) {
+        NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
+
+    }
+
     void mainloop() {
         double lastFrame = 0;
         double fps = 0;
+
+        float* buffer = new float[pBuffer.size() * sizeof(Particle)] { 0.f };
         do {
             double currentTime = glfwGetTime();
             double dt = currentTime - lastFrame;
             fps = 1.0 / dt;
 
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+            GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            memcpy(buffer, p, pBuffer.size() * sizeof(Particle));
+            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
+            glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
+            auto view = glm::mat4(1.f);
+            auto proj = glm::mat4(1.f);
+            view = glm::lookAt(camera.position, camera.direction + camera.position, { 0.f, 1.f, 0.f });
+            proj = glm::perspective(glm::radians(camera.fov), static_cast<float>(res.x) / static_cast<float>(res.y), camera.nearPlane, camera.farPlane);
+            glm::mat4 invView = glm::inverse(view);
+            glm::mat4 invProj = glm::inverse(proj);
+            glm::vec3 direction = glm::vec3(invView * glm::vec4(glm::normalize(glm::vec3(invProj * glm::vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
+            int closest = -1;
+            float minT = std::numeric_limits<float>::max();
+            for (int i = 0; i < pBuffer.size(); i++) {
+                Particle p = reinterpret_cast<Particle*>(buffer)[i];
+
+                glm::vec3 origin = camera.position - p.pos;
+                float a = glm::dot(direction, direction);
+                float b = 2.f * glm::dot(origin, direction);
+                float c = glm::dot(origin, origin) - p.radius * p.radius * 4.f;
+
+                float d = b * b - 4.f * a * c;
+                if (d <= 0.f) continue;
+                float t = (-b - sqrt(d)) / (2.f * a);
+                if (t < minT && t >= 0) {
+                    minT = t;
+                    closest = i;
+                }
+            }
+            hoveringParticle = closest >= 0;
+            if (hoveringParticle) selected = reinterpret_cast<Particle*>(buffer)[closest];
+
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt));
-            bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0);
+            bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0 || hoveringParticle);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
@@ -661,6 +713,29 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
+            if (hoveringParticle && !camera.mouseLocked) {
+                ImGui::PushFont(ImGui::font);
+                double x, y;
+                glfwGetCursorPos(window, &x, &y);
+                ImGui::SetNextWindowPos({ static_cast<float>(x + 10.f), static_cast<float>(y) });
+                ImGui::Begin("##pInfo", nullptr,
+                    ImGuiWindowFlags_AlwaysAutoResize |
+                    ImGuiWindowFlags_NoCollapse |
+                    ImGuiWindowFlags_NoTitleBar |
+                    ImGuiWindowFlags_NoMove
+                );
+                ImGui::Text("X:% 06f", selected.pos.x); ImGui::SameLine();
+                ImGui::Text("Y:% 06f", selected.pos.y); ImGui::SameLine();
+                ImGui::Text("Z:% 06f", selected.pos.z);
+                ImGui::Text("Velocity: %.3g m/s", glm::length(selected.vel));
+                ImGui::Text("Acceleration: %.3g m/s^2", glm::length(selected.acc));
+                ImGui::Text("Mass: %.9g kg", selected.mass);
+                ImGui::Text(reinterpret_cast<const char*>(u8"Temperature: %.9g\u00b0""C"), selected.temp);
+                ImGui::Text("Radius: %.9g m", selected.radius);
+                ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
+                ImGui::PopFont();
+                ImGui::End();
+            }
             ImGui::Render();
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -668,7 +743,7 @@ public:
             if (showMilkyway) {
                 glDepthFunc(GL_LEQUAL);
                 skybox.use();
-                camera.projMat(res.x, res.y, 0.0001f, 1e+6, skybox.id, true);
+                camera.projMat(res.x, res.y, skybox.id, true);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
                 glDepthFunc(GL_LESS);
             }
@@ -677,8 +752,9 @@ public:
             glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
             shader.use();
-            camera.projMat(res.x, res.y, 0.0001f, 1e+6, shader.id, false);
+            camera.projMat(res.x, res.y, shader.id, false);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
             glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -694,6 +770,7 @@ public:
 };
 
 int main() {
-    NBodiment proj = NBodiment();
+    NBodiment app = NBodiment();
+    app.mainloop();
     return 0;
 }
