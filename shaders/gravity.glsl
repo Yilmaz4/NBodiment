@@ -18,6 +18,7 @@ layout(std430, binding = 0) volatile buffer vBuffer {
 layout(location = 0) uniform float uTimeDelta;
 
 const float G = 6.67430e-11;
+const float PI = 3.14159265;
 
 Particle read(uint i) {
     return Particle(
@@ -43,6 +44,18 @@ void write(uint i, Particle p) {
     vs[i + 11] = p.radius;
 }
 
+float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
+    float y = sign(x) * uintBitsToFloat(floatBitsToUint(abs(x)) / 3u + 0x2a514067u);
+
+    for (int i = 0; i < 2; i++)
+        y = (2. * y + x / (y * y)) * .333333333;
+    for (int i = 0; i < 2; i++) {
+        float y3 = y * y * y;
+        y *= (y3 + 2. * x) / (2. * y3 + x);
+    }
+    return y;
+}
+
 void main() {
     if (uTimeDelta == 0) return;
     Particle p = read(gl_GlobalInvocationID.x * 12);
@@ -57,13 +70,17 @@ void main() {
             float minDistSqr = (p.radius + q.radius) * (p.radius + q.radius);
             if (distSqr <= minDistSqr) {
                 if (p.mass > q.mass) {
+                    float density = p.mass / (4.f * PI * pow(p.radius, 3) / 3.f);
                     p.mass += q.mass;
+                    p.radius = cbrt((3.f * (p.mass / density)) / (4.f * PI));
                     q.mass = 0;
                     q.radius = 0;
                     write(uint(i) * 12, q);
                 }
                 else {
+                    float density = q.mass / (4.f * PI * pow(q.radius, 3) / 3.f);
                     q.mass += p.mass;
+                    q.radius = cbrt((3.f * (q.mass / density)) / (4.f * PI));
                     p.mass = 0;
                     p.radius = 0;
                     write(uint(i) * 12, q);
