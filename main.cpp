@@ -440,7 +440,6 @@ class NBodiment {
     double lastSpeedChange = -5;
     float timeStep = 0.05f;
 
-    bool wireframe = false;
     bool showMilkyway = true;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
@@ -645,7 +644,6 @@ public:
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
                     ImGui::SeparatorText("Debugging");
-                    ImGui::Checkbox("Wireframe mode", &wireframe);
                 }
                 ImGui::PopFont();
                 ImGui::End();
@@ -683,9 +681,7 @@ public:
             camera.projMat(res.x, res.y, 0.0001f, 1e+6, shader.id, false);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
-            glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
             glDrawArrays(GL_TRIANGLES, 0, 6);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
             lastFrame = currentTime;
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
