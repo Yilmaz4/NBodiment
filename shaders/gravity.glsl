@@ -9,27 +9,30 @@ struct Particle {
     float mass;
     float temp;
     float radius;
+    int material;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallicity;
+    float roughness;
+    float emissivity;
 };
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
 };
 
-layout(location = 0) uniform float uTimeDelta;
-
-const float G = 6.67430e-11;
-const float PI = 3.14159265;
-
-Particle read(uint i) {
+Particle read(in uint i) {
     return Particle(
         vec3(vs[i + 0], vs[i + 1], vs[i + 2]),
         vec3(vs[i + 3], vs[i + 4], vs[i + 5]),
         vec3(vs[i + 6], vs[i + 7], vs[i + 8]),
-        vs[i + 9], vs[i + 10], vs[i + 11]
+        vs[i + 9], vs[i + 10], vs[i + 11], int(vs[i + 12])
     );
 }
 
-void write(uint i, Particle p) {
+void write(in uint i, in Particle p) {
     vs[i + 0] = p.pos.x;
     vs[i + 1] = p.pos.y;
     vs[i + 2] = p.pos.z;
@@ -42,7 +45,13 @@ void write(uint i, Particle p) {
     vs[i + 9] = p.mass;
     vs[i + 10] = p.temp;
     vs[i + 11] = p.radius;
+    vs[i + 12] = float(p.material);
 }
+
+layout(location = 0) uniform float uTimeDelta;
+
+const float G = 6.67430e-11;
+const float PI = 3.14159265;
 
 float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
     float y = sign(x) * uintBitsToFloat(floatBitsToUint(abs(x)) / 3u + 0x2a514067u);
@@ -58,12 +67,12 @@ float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
 
 void main() {
     if (uTimeDelta == 0) return;
-    Particle p = read(gl_GlobalInvocationID.x * 12);
+    Particle p = read(gl_GlobalInvocationID.x * 13);
     if (p.mass == 0) return;
     vec3 totalAcc = vec3(0.0);
     for (int i = 0; i < gl_NumWorkGroups.x; ++i) {
         if (i != int(gl_GlobalInvocationID.x)) {
-            Particle q = read(uint(i) * 12);
+            Particle q = read(uint(i) * 13);
             if (q.mass == 0) continue;
             vec3 dir = q.pos - p.pos;
             float distSqr = dot(dir, dir);
@@ -75,7 +84,7 @@ void main() {
                     p.radius = cbrt((3.f * (p.mass / density)) / (4.f * PI));
                     q.mass = 0;
                     q.radius = 0;
-                    write(uint(i) * 12, q);
+                    write(uint(i) * 13, q);
                 }
                 else {
                     float density = q.mass / (4.f * PI * pow(q.radius, 3) / 3.f);
@@ -83,8 +92,8 @@ void main() {
                     q.radius = cbrt((3.f * (q.mass / density)) / (4.f * PI));
                     p.mass = 0;
                     p.radius = 0;
-                    write(uint(i) * 12, q);
-                    write(gl_GlobalInvocationID.x * 12, p);
+                    write(uint(i) * 13, q);
+                    write(gl_GlobalInvocationID.x * 13, p);
                     return;
                 }
             }
@@ -99,5 +108,5 @@ void main() {
     p.vel += p.acc * uTimeDelta;
     p.pos += p.vel * uTimeDelta;
 
-    write(gl_GlobalInvocationID.x * 12, p);
+    write(gl_GlobalInvocationID.x * 13, p);
 }

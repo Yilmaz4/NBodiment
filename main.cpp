@@ -423,6 +423,14 @@ struct Particle {
     float mass;
     float temp;
     float radius;
+    int material;
+};
+
+struct Material {
+    glm::vec3 albedo;
+    float metallicity;
+    float roughness;
+    float emissivity;
 };
 
 class NBodiment {
@@ -435,9 +443,11 @@ class NBodiment {
     GLFWwindow* window;
     GLFWmonitor* monitor;
 
+    std::vector<Particle> pBuffer;
+    std::vector<Material> mBuffer;
+
     glm::ivec2 res;
     glm::ivec2 pos = { 60, 60 };
-    std::vector<Particle> pBuffer;
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5.0;
@@ -531,8 +541,8 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-0.2f, 0.2f);
-        std::uniform_real_distribution<float> mass(1e+8, 1e+8);
+        std::uniform_real_distribution<float> pos(0.15f, 0.15f);
+        std::uniform_real_distribution<float> mass(1e+7, 1e+7);
 
         pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 3e+3, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
         for (int i = 0; i < 1; i++) {
@@ -544,9 +554,23 @@ public:
                 .acc = { 0.f, 0.f, 0.f },
                 .mass = m,
                 .temp = 300,
-                .radius = cbrt((3.f * (m / 10e+14f)) / (4.f * (float)(M_PI)))
-                }));
+                .radius = cbrt((3.f * (m / 10e+11f)) / (4.f * (float)(M_PI))),
+                .material = 0
+            }));
         }
+
+        mBuffer.push_back(Material({
+            .albedo = glm::vec3(1.f, 0.f, 0.f),
+            .metallicity = 0.f,
+            .roughness = 1.f,
+            .emissivity = 0.f
+        }));
+        mBuffer.push_back(Material({
+            .albedo = glm::vec3(0.f, 1.f, 0.f),
+            .metallicity = 0.f,
+            .roughness = 0.5f,
+            .emissivity = 0.f
+        }));
 
         glGenBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
