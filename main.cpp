@@ -298,11 +298,9 @@ public:
         int width, height, nrChannels;
         unsigned char* data;
         for (int i = 0; i < 6; i++) {
-            std::string path = std::format("skybox/{}.png", i);
-            if (!std::filesystem::exists(path)) {
-                throw Error("Skybox not available");
-            }
+            std::string path = std::format("assets/{}.png", i);
             data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+            if (!data) throw Error("Skybox not available");
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);
         }
@@ -442,8 +440,10 @@ class NBodiment {
     std::vector<Particle> pBuffer;
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
-    double lastSpeedChange = -5;
-    float timeStep = 0.00f;
+    double lastSpeedChange = -5.0;
+    double doubleClickInterval = 0.5;
+    glm::dvec2 lastPresses = { -doubleClickInterval, 0.0 };
+    float timeStep = 0.05f;
 
     bool showMilkyway = true;
     Particle selected;
@@ -452,6 +452,29 @@ class NBodiment {
     glm::dvec2 mousePos;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
+protected:
+    void load_texture(const char* path, unsigned int binding, GLenum dimension) {
+        int width, height, nrChannels;
+        unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
+        if (!data) throw Error("texture not found in assets");
+        GLuint texture;
+
+        glGenTextures(1, &texture);
+        glActiveTexture(GL_TEXTURE0 + binding);
+        glBindTexture(dimension, texture);
+        switch (dimension) {
+        case GL_TEXTURE_1D:
+            glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, width, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            break;
+        case GL_TEXTURE_2D:
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        }
+        glTexParameteri(dimension, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(dimension, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(dimension, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(dimension, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        stbi_image_free(data);
+    }
 public:
     NBodiment() {
         std::setlocale(LC_CTYPE, ".UTF8");
@@ -508,11 +531,11 @@ public:
         
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
-        std::uniform_real_distribution<float> mass(5e+7, 1e+8);
+        std::uniform_real_distribution<float> pos(-0.5f, 0.5f);
+        std::uniform_real_distribution<float> mass(1e+8, 1e+8);
 
-        pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 30, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
-        for (int i = 0; i < 50; i++) {
+        pBuffer.push_back(Particle({ 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, 1e+10, 3e+3, cbrt((3.f * (1e+10 / 10e+14f)) / (4.f * M_PI))));
+        for (int i = 0; i < 20; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             float m = mass(rng);
             pBuffer.push_back(Particle({
@@ -520,7 +543,7 @@ public:
                 .vel = glm::normalize(glm::cross(p, p + glm::vec3(0.f, 1.f, 0.f))) * sqrt(6.67430e-11f * 1e+10f / glm::length(p)), // orbital velocity
                 .acc = { 0.f, 0.f, 0.f },
                 .mass = m,
-                .temp = 30,
+                .temp = 300,
                 .radius = cbrt((3.f * (m / 10e+14f)) / (4.f * (float)(M_PI)))
             }));
         }
@@ -545,6 +568,11 @@ public:
         glUniform3f(glGetUniformLocation(shader.id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
         glUniform1i(glGetUniformLocation(shader.id, "numParticles"), pBuffer.size());
+
+        load_texture("assets/8k_earth_daymap.jpg", 0, GL_TEXTURE_2D);
+        load_texture("assets/8k_earth_clouds.jpg", 1, GL_TEXTURE_2D);
+        load_texture("assets/8k_sun.jpg", 2, GL_TEXTURE_2D);
+        load_texture("assets/temperature.jpg", 3, GL_TEXTURE_1D);
 
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_MULTISAMPLE);
@@ -616,7 +644,16 @@ public:
 
     static inline void on_mousePress(GLFWwindow* window, int button, int action, int mods) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
-        // implement double-click to follow & orbit
+        switch (button) {
+        case GLFW_MOUSE_BUTTON_LEFT:
+            if (action == GLFW_PRESS) {
+                app->lastPresses.x = app->lastPresses.y;
+                app->lastPresses.y = glfwGetTime();
+            }
+            else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval) {
+                app->lockedToParticle = true;
+            }
+        }
     }
 
     void mainloop() {
@@ -629,41 +666,43 @@ public:
             double dt = currentTime - lastFrame;
             fps = 1.0 / dt;
 
-            if (timeStep != 0) {
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-                GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                memcpy(buffer, p, pBuffer.size() * sizeof(Particle));
-                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            }
-            glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
-            glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
-            auto view = glm::mat4(1.f);
-            auto proj = glm::mat4(1.f);
-            view = glm::lookAt(camera.position, camera.direction + camera.position, { 0.f, 1.f, 0.f });
-            proj = glm::perspective(glm::radians(camera.fov), static_cast<float>(res.x) / static_cast<float>(res.y), camera.nearPlane, camera.farPlane);
-            glm::mat4 invView = glm::inverse(view);
-            glm::mat4 invProj = glm::inverse(proj);
-            glm::vec3 direction = glm::vec3(invView * glm::vec4(glm::normalize(glm::vec3(invProj * glm::vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
-            int closest = -1;
-            float minT = std::numeric_limits<float>::max();
-            for (int i = 0; i < pBuffer.size(); i++) {
-                Particle p = reinterpret_cast<Particle*>(buffer)[i];
-
-                glm::vec3 origin = camera.position - p.pos;
-                float a = glm::dot(direction, direction);
-                float b = 2.f * glm::dot(origin, direction);
-                float c = glm::dot(origin, origin) - p.radius * p.radius * 4.f;
-
-                float d = b * b - 4.f * a * c;
-                if (d <= 0.f) continue;
-                float t = (-b - sqrt(d)) / (2.f * a);
-                if (t < minT && t >= 0) {
-                    minT = t;
-                    closest = i;
+            if (!lockedToParticle) {
+                if (timeStep != 0) {
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+                    GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    memcpy(buffer, p, pBuffer.size() * sizeof(Particle));
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                 }
+                glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
+                glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
+                auto view = glm::mat4(1.f);
+                auto proj = glm::mat4(1.f);
+                view = glm::lookAt(camera.position, camera.direction + camera.position, { 0.f, 1.f, 0.f });
+                proj = glm::perspective(glm::radians(camera.fov), static_cast<float>(res.x) / static_cast<float>(res.y), camera.nearPlane, camera.farPlane);
+                glm::mat4 invView = glm::inverse(view);
+                glm::mat4 invProj = glm::inverse(proj);
+                glm::vec3 direction = glm::vec3(invView * glm::vec4(glm::normalize(glm::vec3(invProj * glm::vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
+                int closest = -1;
+                float minT = std::numeric_limits<float>::max();
+                for (int i = 0; i < pBuffer.size(); i++) {
+                    Particle p = reinterpret_cast<Particle*>(buffer)[i];
+
+                    glm::vec3 origin = camera.position - p.pos;
+                    float a = glm::dot(direction, direction);
+                    float b = 2.f * glm::dot(origin, direction);
+                    float c = glm::dot(origin, origin) - p.radius * p.radius * 4.f;
+
+                    float d = b * b - 4.f * a * c;
+                    if (d <= 0.f) continue;
+                    float t = (-b - sqrt(d)) / (2.f * a);
+                    if (t < minT && t >= 0) {
+                        minT = t;
+                        closest = i;
+                    }
+                }
+                hoveringParticle = closest >= 0;
+                if (hoveringParticle) selected = reinterpret_cast<Particle*>(buffer)[closest];
             }
-            hoveringParticle = closest >= 0;
-            if (hoveringParticle) selected = reinterpret_cast<Particle*>(buffer)[closest];
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt));
@@ -683,7 +722,7 @@ public:
                 )) {
                     ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
                     ImGui::SeparatorText("Simulation");
-                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 0.1f, "%.9g seconds");
+                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 1.0f, "%.9g seconds");
                     ImGui::SeparatorText("Environment");
                     ImGui::Checkbox("Milky way background", &showMilkyway);
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
@@ -692,7 +731,9 @@ public:
                     ImGui::SeparatorText("Camera");
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
-                    ImGui::SeparatorText("Debugging");
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(80, 80, 80, 255));
+                    ImGui::Text("(c) 2017-2024 Yilmaz Alpaslan");
+                    ImGui::PopStyleColor();
                 }
                 ImGui::PopFont();
                 ImGui::End();
@@ -710,7 +751,7 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
-            if (hoveringParticle && !camera.mouseLocked) {
+            if (hoveringParticle && !camera.mouseLocked && !lockedToParticle) {
                 ImGui::PushFont(ImGui::font);
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);
@@ -727,7 +768,7 @@ public:
                 ImGui::Text("Velocity: %.3g m/s", glm::length(selected.vel));
                 ImGui::Text("Acceleration: %.3g m/s^2", glm::length(selected.acc));
                 ImGui::Text("Mass: %.9g kg", selected.mass);
-                ImGui::Text(reinterpret_cast<const char*>(u8"Temperature: %.9g\u00b0""C"), selected.temp);
+                ImGui::Text("Temperature: %.9g K", selected.temp);
                 ImGui::Text("Radius: %.9g m", selected.radius);
                 ImGui::Text("Density: %.9g kg/m^3", selected.mass / (4.f * M_PI * pow(selected.radius, 3) / 3.f));
                 ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
