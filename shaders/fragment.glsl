@@ -11,14 +11,12 @@ struct Particle {
     float mass;
     float temp;
     float radius;
-    int material;
-};
-
-struct Material {
+    
     vec3 albedo;
+    vec3 emissionColor;
+    float emissionStrength;
     float metallicity;
     float roughness;
-    float emissivity;
 };
 
 layout(std430, binding = 0) volatile buffer vBuffer {
@@ -26,23 +24,15 @@ layout(std430, binding = 0) volatile buffer vBuffer {
 };
 uniform int numParticles;
 
-layout(std430, binding = 1) readonly buffer mBuffer {
-    float ms[];
-};
-
 Particle read(in int i) {
     return Particle(
         vec3(vs[i + 0], vs[i + 1], vs[i + 2]),
         vec3(vs[i + 3], vs[i + 4], vs[i + 5]),
         vec3(vs[i + 6], vs[i + 7], vs[i + 8]),
-        vs[i + 9], vs[i + 10], vs[i + 11], int(vs[i + 12])
-    );
-}
-
-Material get_material(in int i) {
-    return Material(
-        vec3(ms[i + 0], ms[i + 1], ms[i + 2]),
-        ms[i + 3], ms[i + 4], ms[i + 5]
+        vs[i + 9], vs[i + 10], vs[i + 11],
+        vec3(vs[i + 12], vs[i + 13], vs[i + 14]),
+        vec3(vs[i + 15], vs[i + 16], vs[i + 17]),
+        vs[i + 18], vs[i + 19], vs[i + 20]
     );
 }
 
@@ -59,7 +49,15 @@ void write(in int i, in Particle p) {
     vs[i + 9] = p.mass;
     vs[i + 10] = p.temp;
     vs[i + 11] = p.radius;
-    vs[i + 12] = float(p.material);
+    vs[i + 12] = p.albedo.r;
+    vs[i + 13] = p.albedo.g;
+    vs[i + 14] = p.albedo.b;
+    vs[i + 15] = p.emissionColor.r;
+    vs[i + 16] = p.emissionColor.g;
+    vs[i + 17] = p.emissionColor.b;
+    vs[i + 18] = p.emissionStrength;
+    vs[i + 19] = p.metallicity;
+    vs[i + 20] = p.roughness;
 }
 
 vec3 polar_to_cartesian(in float longitude, in float latitude, in float radius) {
@@ -75,16 +73,22 @@ float atan2(in float y, in float x) {
     return mix(M_PI / 2.0 - atan(x, y), atan(y, x), s);
 }
 
-// https://github.com/SebLague/Ray-Tracing/blob/main/Assets/Scripts/Shaders/RayTracing.shader
-uint nextRandom(inout uint state) {
+float random(inout uint state) {
     state = state * 747796405 + 2891336453;
     uint result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
     result = (result >> 22) ^ result;
-    return result;
+    return result / 4294967295.0;
 }
 
-float randomValue(inout uint state) {
-    return nextRandom(state) / 4294967295.0;
+float randomND(inout uint seed) {
+    float theta = M_2PI * random(seed);
+    float rho = sqrt(-2.f * log(random(seed)));
+    return rho * cos(theta);
+}
+
+vec3 randomDirection(inout uint seed, in vec3 normal) {
+    vec3 dir = normalize(vec3(randomND(seed), randomND(seed), randomND(seed)));
+    return sign(dot(normal, dir)) * dir;
 }
 
 layout(binding = 0) uniform sampler2D earthDaymap;
@@ -104,42 +108,56 @@ uniform vec3 ambientLight;
 
 out vec4 fragColor;
 
+float intersect(in vec3 origin, in vec3 dir, in vec3 pos, in float radius) {
+    vec3 org = origin - pos;
+    float a = dot(dir, dir);
+    float b = 2.f * dot(org, dir);
+    float c = dot(org, org) - radius * radius;
+
+    float d = b * b - 4.f * a * c;
+    if (d <= 0.f) return -1;
+    return (-b - sqrt(d)) / (2.f * a);
+}
+
 void main() {
     vec2 coord = (gl_FragCoord.xy + gl_SamplePosition) / screenSize;
     vec3 direction = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
+    vec3 origin = cameraPos;
 
-    for (int depth = 0; depth < 3; depth++) {
-        int closest = -1;
-        float minT = 1.f / 0.f;
-        for (int i = 0; i < numParticles * 13; i += 13) {
+    uint seed = uint(gl_FragCoord.y + screenSize.x * gl_FragCoord.x);
+
+    vec3 accLight = vec3(0.f);
+    vec3 rayColor = vec3(1.f);
+
+    for (int depth = 0; depth < 5; depth++) {
+        int pidx = -1;
+        float mt = 1.f / 0.f;
+        for (int i = 0; i < numParticles * 21; i += 21) {
             Particle p = read(i);
-            Material m = get_material(p.material);
             if (p.radius == 0) continue;
-            vec3 origin = cameraPos - p.pos;
-            float a = dot(direction, direction);
-            float b = 2.f * dot(origin, direction);
-            float c = dot(origin, origin) - p.radius * p.radius;
-
-            float d = b * b - 4.f * a * c;
-            if (d <= 0.f) continue;
-            float t = (-b - sqrt(d)) / (2.f * a);
-            if (t < minT && t >= 0) {
-                minT = t;
-                closest = i;
+            float t = intersect(origin, direction, p.pos, p.radius);
+            if (t >= 0 && mt > t) {
+                pidx = i;
+                mt = t;
             }
         }
-        if (closest < 0) {
-            fragColor = vec4(0.f);
-            return;
+        if (pidx == -1) {
+            if (depth == 0) {
+                fragColor = vec4(0.f);
+                return;
+            }
+            break;
         }
-        Particle p = read(closest);
-        vec3 origin = cameraPos - p.pos;
-        vec3 hit = origin + direction * minT;
-        vec3 normal = normalize(hit);
+        vec3 hit = normalize(origin + direction * mt);
+        origin = hit;
+        direction = randomDirection(seed, hit);
+        Particle p = read(pidx);
+        accLight += p.emissionColor * p.emissionStrength * rayColor;
+        rayColor *= p.albedo;
     }
 
     //float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
     //float v = acos(normal.y) / M_PI;
     
-    fragColor = fragColor = vec4(vec3(0.9f), 1.f);
+    fragColor = vec4(accLight, 1.f);
 }
