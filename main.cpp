@@ -458,6 +458,8 @@ class NBodiment {
     bool hoveringParticle = false;
     bool lockedToParticle = false;
     glm::dvec2 mousePos;
+    int numBounces = 10;
+    int numRaysPerPixel = 1;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
 protected:
@@ -539,8 +541,9 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(0.20f, 0.20f);
-        std::uniform_real_distribution<float> mass(1e+8, 1e+8);
+        std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> col(0.f, 1.f);
+        std::uniform_real_distribution<float> mass(1e+7, 1e+7);
 
         pBuffer.push_back(Particle({
             .pos = glm::vec3(0.f),
@@ -548,15 +551,15 @@ public:
             .acc = glm::vec3(0.f),
             .mass = 1e+10,
             .temp = 3e+3,
-            .radius = cbrt((3.f * (1e+10f / 10e+14f)) / (4.f * (float)(M_PI))),
+            .radius = cbrt((3.f * (1e+10f / 10e+11f)) / (4.f * (float)(M_PI))),
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
-            .emissionColor = glm::vec3(1.f, 1.f, 0.f),
-            .emissionStrength = 1.f,
+            .emissionColor = glm::vec3(1.f, 1.f, 1.f),
+            .emissionStrength = 100.f,
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
-        for (int i = 0; i < 1; i++) {
+        for (int i = 0; i < 1000; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             float m = mass(rng);
             pBuffer.push_back(Particle({
@@ -567,9 +570,9 @@ public:
                 .temp = 300,
                 .radius = cbrt((3.f * (m / 10e+11f)) / (4.f * (float)(M_PI))),
 
-                .albedo = glm::vec3(1.f, 0.f, 0.f),
-                .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-                .emissionStrength = 0.f,
+                .albedo = glm::vec3(0.5f, 0.1f, 0.5f),
+                .emissionColor = glm::vec3(col(rng), col(rng), col(rng)),
+                .emissionStrength = 0,
                 .metallicity = 0.f,
                 .roughness = 1.f,
             }));
@@ -595,6 +598,8 @@ public:
         glUniform3f(glGetUniformLocation(shader.id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
         glUniform1i(glGetUniformLocation(shader.id, "numParticles"), pBuffer.size());
+        glUniform1i(glGetUniformLocation(shader.id, "numBounces"), numBounces);
+        glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
 
         load_texture("assets/8k_earth_daymap.jpg", 0, GL_TEXTURE_2D);
         load_texture("assets/8k_earth_clouds.jpg", 1, GL_TEXTURE_2D);
@@ -754,7 +759,11 @@ public:
                     ImGui::Checkbox("Milky way background", &showMilkyway);
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
                         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
-
+                    ImGui::SeparatorText("Graphics");
+                    if (ImGui::SliderInt("Max bounces", &numBounces, 1, 100))
+                        glUniform1i(glGetUniformLocation(shader.id, "numBounces"), numBounces);
+                    if (ImGui::SliderInt("Rays per pixel", &numRaysPerPixel, 1, 100))
+                        glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
                     ImGui::SeparatorText("Camera");
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
