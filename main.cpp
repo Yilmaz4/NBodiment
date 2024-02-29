@@ -32,6 +32,37 @@
 namespace ImGui {
     ImFont* font;
 
+    static bool ToggleButton(const char* name, bool* v) {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+        float height = ImGui::GetFrameHeight();
+        float width = height * 1.8f;
+        float radius = height * 0.50f;
+        float rounding = 0.4f;
+
+        ImGui::InvisibleButton(name, ImVec2(width, height));
+        if (ImGui::IsItemClicked()) {
+            *v ^= 1;
+            return true;
+        }
+        ImGuiContext& gg = *GImGui;
+        float ANIM_SPEED = 0.055f;
+        if (gg.LastActiveId == gg.CurrentWindow->GetID(name))
+            float t_anim = ImSaturate(gg.LastActiveIdTimer / ANIM_SPEED);
+        if (ImGui::IsItemHovered())
+            draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height), ImGui::GetColorU32(ImVec4(0.2196f, 0.2196f, 0.2196f, 1.0f)), height * rounding);
+        else
+            draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height), ImGui::GetColorU32(*v ? ImVec4(0.2196f, 0.2196f, 0.2196f, 1.0f) : ImVec4(0.08f, 0.08f, 0.08f, 1.0f)), height * rounding);
+        ImVec2 center = ImVec2(radius + (*v ? 1 : 0) * (width - radius * 2.0f), radius);
+        draw_list->AddRectFilled(ImVec2((p.x + center.x) - 9.0f, p.y + 1.5f),
+            ImVec2((p.x + (width / 2) + center.x) - 9.0f, p.y + height - 1.5f), IM_COL32(255, 255, 255, 255), height * rounding);
+        ImGui::SameLine(42.f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.f);
+        ImGui::Text(name);
+        return false;
+    }
+
     inline static void load_theme() {
         ImGui::StyleColorsDark();
 
@@ -458,8 +489,8 @@ class NBodiment {
     bool hoveringParticle = false;
     bool lockedToParticle = false;
     glm::dvec2 mousePos;
-    int numBounces = 10;
     int numRaysPerPixel = 10;
+    bool globalIllumination = false;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
 protected:
@@ -541,7 +572,7 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-0.5f, 0.5f);
+        std::uniform_real_distribution<float> pos(-0.2f, 0.2f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
         std::uniform_real_distribution<float> mass(1e+7, 1e+7);
 
@@ -551,16 +582,17 @@ public:
             .acc = glm::vec3(0.f),
             .mass = 1e+10,
             .temp = 3e+3,
-            .radius = cbrt((3.f * (1e+10f / 10e+12f)) / (4.f * (float)(M_PI))),
+            .radius = cbrt((3.f * (1e+10f / 10e+14f)) / (4.f * (float)(M_PI))),
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
             .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .emissionStrength = 10.f,
+            .emissionStrength = 100.f,
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 5; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
+            glm::vec3 c = { col(rng), col(rng), col(rng) };
             float m = mass(rng);
             pBuffer.push_back(Particle({
                 .pos = p,
@@ -570,9 +602,9 @@ public:
                 .temp = 300,
                 .radius = cbrt((3.f * (m / 10e+11f)) / (4.f * (float)(M_PI))),
 
-                .albedo = glm::vec3(col(rng), col(rng), col(rng)),
-                .emissionColor = glm::vec3(col(rng), col(rng), col(rng)),
-                .emissionStrength = 0,
+                .albedo = c,
+                .emissionColor = c,
+                .emissionStrength = 0.f,
                 .metallicity = 0.f,
                 .roughness = 1.f,
             }));
@@ -598,8 +630,8 @@ public:
         glUniform3f(glGetUniformLocation(shader.id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
         glUniform1i(glGetUniformLocation(shader.id, "numParticles"), pBuffer.size());
-        glUniform1i(glGetUniformLocation(shader.id, "numBounces"), numBounces);
         glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
+        glUniform1i(glGetUniformLocation(shader.id, "globalIllumination"), globalIllumination);
 
         load_texture("assets/8k_earth_daymap.jpg", 0, GL_TEXTURE_2D);
         load_texture("assets/8k_earth_clouds.jpg", 1, GL_TEXTURE_2D);
@@ -760,10 +792,13 @@ public:
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
                         glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
                     ImGui::SeparatorText("Graphics");
-                    if (ImGui::SliderInt("Max bounces", &numBounces, 1, 100))
-                        glUniform1i(glGetUniformLocation(shader.id, "numBounces"), numBounces);
-                    if (ImGui::SliderInt("Rays per pixel", &numRaysPerPixel, 1, 100))
-                        glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
+                    if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
+                        glUniform1i(glGetUniformLocation(shader.id, "globalIllumination"), globalIllumination);
+                    }
+                    if (globalIllumination) {
+                        if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
+                            glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
+                    }
                     ImGui::SeparatorText("Camera");
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");

@@ -105,8 +105,8 @@ uniform mat4 invProjMatrix;
 uniform mat4 invViewMatrix;
 uniform vec3 cameraPos;
 uniform vec3 ambientLight;
-uniform int numBounces;
 uniform int numRaysPerPixel;
+uniform bool globalIllumination;
 
 out vec4 fragColor;
 
@@ -121,23 +121,29 @@ float intersect(in vec3 origin, in vec3 dir, in vec3 pos, in float radius) {
     return (-b - sqrt(d)) / (2.f * a);
 }
 
+int index(in vec3 origin, in vec3 direction, out float mt) {
+    int pidx = -1;
+    mt = 1.f / 0.f;
+    for (int i = 0; i < numParticles * 21; i += 21) {
+        Particle p = read(i);
+        if (p.radius == 0) continue;
+        float t = intersect(origin, direction, p.pos, p.radius);
+        if (t >= 0 && mt > t) {
+            pidx = i;
+            mt = t;
+        }
+    }
+    return pidx;
+}
+
 vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
     vec3 accLight = vec3(0.f);
     vec3 rayColor = vec3(1.f);
     uint seed = uint(gl_FragCoord.y + screenSize.x * gl_FragCoord.x) * ridx;
 
-    for (int depth = 0; depth < numBounces; depth++) {
-        int pidx = -1;
-        float mt = 1.f / 0.f;
-        for (int i = 0; i < numParticles * 21; i += 21) {
-            Particle p = read(i);
-            if (p.radius == 0) continue;
-            float t = intersect(origin, direction, p.pos, p.radius);
-            if (t >= 0 && mt > t) {
-                pidx = i;
-                mt = t;
-            }
-        }
+    for (int depth = 0; depth < 10; depth++) {
+        float mt;
+        int pidx = index(origin, direction, mt);
         if (pidx == -1) {
             if (depth == 0) return vec3(-1.f);
             break;
@@ -165,15 +171,28 @@ void main() {
     //float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
     //float v = acos(normal.y) / M_PI;
 
-    vec3 totalAccLight = vec3(0.f);
-    for (int i = 1; i < numRaysPerPixel + 1; i++) {
-        vec3 accLight = trace(origin, direction, i);
-        if (accLight.x < 0) {
+    if (globalIllumination) {
+        vec3 totalAccLight = vec3(0.f);
+        for (int i = 1; i < numRaysPerPixel + 1; i++) {
+            vec3 accLight = trace(origin, direction, i);
+            if (accLight.x < 0) {
+                fragColor = vec4(0.f);
+                return;
+            }
+            totalAccLight += accLight;
+        }
+        fragColor = vec4(totalAccLight / numRaysPerPixel, 1.f);
+    }
+    else {
+        float mt;
+        int pidx = index(origin, direction, mt);
+        if (pidx == -1) {
             fragColor = vec4(0.f);
             return;
         }
-        totalAccLight += accLight;
+        Particle p = read(pidx);
+        vec3 hit = origin + direction * mt;
+        vec3 normal = normalize(hit - p.pos);
+        fragColor = vec4((p.albedo * dot(normal, -normalize(p.pos)) + p.emissionColor * p.emissionStrength), 1.f);
     }
-    
-    fragColor = vec4(totalAccLight / 10, 1.f);
 }
