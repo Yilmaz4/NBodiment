@@ -459,7 +459,7 @@ class NBodiment {
     bool lockedToParticle = false;
     glm::dvec2 mousePos;
     int numBounces = 10;
-    int numRaysPerPixel = 1;
+    int numRaysPerPixel = 10;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
 protected:
@@ -541,7 +541,7 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> pos(-0.5f, 0.5f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
         std::uniform_real_distribution<float> mass(1e+7, 1e+7);
 
@@ -551,15 +551,15 @@ public:
             .acc = glm::vec3(0.f),
             .mass = 1e+10,
             .temp = 3e+3,
-            .radius = cbrt((3.f * (1e+10f / 10e+11f)) / (4.f * (float)(M_PI))),
+            .radius = cbrt((3.f * (1e+10f / 10e+12f)) / (4.f * (float)(M_PI))),
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
             .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .emissionStrength = 100.f,
+            .emissionStrength = 10.f,
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < 20; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             float m = mass(rng);
             pBuffer.push_back(Particle({
@@ -570,7 +570,7 @@ public:
                 .temp = 300,
                 .radius = cbrt((3.f * (m / 10e+11f)) / (4.f * (float)(M_PI))),
 
-                .albedo = glm::vec3(0.5f, 0.1f, 0.5f),
+                .albedo = glm::vec3(col(rng), col(rng), col(rng)),
                 .emissionColor = glm::vec3(col(rng), col(rng), col(rng)),
                 .emissionStrength = 0,
                 .metallicity = 0.f,

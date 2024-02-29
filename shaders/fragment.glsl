@@ -88,7 +88,7 @@ float randomND(inout uint seed) {
 
 vec3 randomDirection(inout uint seed, in vec3 normal) {
     vec3 dir = normalize(vec3(randomND(seed), randomND(seed), randomND(seed)));
-    return sign(dot(normal, dir)) * dir;
+    return normalize(dir);
 }
 
 layout(binding = 0) uniform sampler2D earthDaymap;
@@ -145,7 +145,12 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
         Particle p = read(pidx);
         vec3 hit = origin + direction * mt;
         origin = hit;
-        direction = randomDirection(seed, normalize(hit - p.pos));
+        vec3 normal = normalize(hit - p.pos);
+
+        vec3 diffuse = normalize(normal + randomDirection(seed, normal));
+        vec3 specular = direction - 2 * dot(direction, normal) * normal;
+        direction = mix(specular, diffuse, p.roughness);
+
         accLight += p.emissionColor * p.emissionStrength * rayColor;
         rayColor *= p.albedo;
     }
