@@ -572,9 +572,9 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-0.2f, 0.2f);
+        std::uniform_real_distribution<float> pos(-20.0f, 20.0f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
-        std::uniform_real_distribution<float> mass(1e+7, 1e+7);
+        std::uniform_real_distribution<float> mass(1e+8, 1e+8);
 
         pBuffer.push_back(Particle({
             .pos = glm::vec3(0.f),
@@ -582,15 +582,15 @@ public:
             .acc = glm::vec3(0.f),
             .mass = 1e+10,
             .temp = 3e+3,
-            .radius = cbrt((3.f * (1e+10f / 10e+14f)) / (4.f * (float)(M_PI))),
+            .radius = cbrt((3.f * (1e+10f / 10e+9f)) / (4.f * (float)(M_PI))),
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
             .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .emissionStrength = 100.f,
+            .emissionStrength = 200.f,
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 100; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             glm::vec3 c = { col(rng), col(rng), col(rng) };
             float m = mass(rng);
@@ -600,7 +600,7 @@ public:
                 .acc = { 0.f, 0.f, 0.f },
                 .mass = m,
                 .temp = 300,
-                .radius = cbrt((3.f * (m / 10e+11f)) / (4.f * (float)(M_PI))),
+                .radius = cbrt((3.f * (m / 10e+9f)) / (4.f * (float)(M_PI))),
 
                 .albedo = c,
                 .emissionColor = c,
@@ -786,7 +786,7 @@ public:
                 )) {
                     ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
                     ImGui::SeparatorText("Simulation");
-                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 1.0f, "%.9g seconds");
+                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 10.0f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
                     ImGui::SeparatorText("Environment");
                     ImGui::Checkbox("Milky way background", &showMilkyway);
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
@@ -822,7 +822,7 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
-            if (hoveringParticle && !camera.mouseLocked && !lockedToParticle) {
+            if (hoveringParticle && !camera.mouseLocked && !lockedToParticle && !ImGui::GetIO().WantCaptureMouse) {
                 ImGui::PushFont(ImGui::font);
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);

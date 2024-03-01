@@ -22,7 +22,7 @@ struct Particle {
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
 };
-uniform int numParticles;
+uniform const int numParticles = 10;
 
 Particle read(in int i) {
     return Particle(
@@ -168,14 +168,11 @@ void main() {
     vec3 direction = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
     vec3 origin = cameraPos;
 
-    //float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
-    //float v = acos(normal.y) / M_PI;
-
     if (globalIllumination) {
         vec3 totalAccLight = vec3(0.f);
         for (int i = 1; i < numRaysPerPixel + 1; i++) {
             vec3 accLight = trace(origin, direction, i);
-            if (accLight.x < 0) {
+            if (accLight.x == -1.f) {
                 fragColor = vec4(0.f);
                 return;
             }
@@ -184,8 +181,20 @@ void main() {
         fragColor = vec4(totalAccLight / numRaysPerPixel, 1.f);
     }
     else {
-        float mt;
-        int pidx = index(origin, direction, mt);
+        float mt = 1.f / 0.f;
+        int pidx = -1;
+        int lightSources[numParticles];
+        int lidx = 0;
+        for (int i = 0; i < numParticles * 21; i += 21) {
+            Particle p = read(i);
+            if (p.emissionStrength > 0.f) lightSources[lidx++] = i;
+            if (p.radius == 0) continue;
+            float t = intersect(origin, direction, p.pos, p.radius);
+            if (t >= 0 && mt > t) {
+                pidx = i;
+                mt = t;
+            }
+        }
         if (pidx == -1) {
             fragColor = vec4(0.f);
             return;
@@ -193,6 +202,21 @@ void main() {
         Particle p = read(pidx);
         vec3 hit = origin + direction * mt;
         vec3 normal = normalize(hit - p.pos);
-        fragColor = vec4((p.albedo * dot(normal, -normalize(p.pos)) + p.emissionColor * p.emissionStrength), 1.f);
+        if (pidx == 0) {
+            float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
+            float v = acos(normal.y) / M_PI;
+            p.albedo = texture2D(starTexture, vec2(u, v)).rgb;
+        }
+        vec3 accLight = vec3(0.f);
+        for (int i = 0; i < lidx; i++) {
+            if (i == pidx) {
+                accLight = p.albedo;
+                break;
+            }
+            Particle q = read(i);
+            vec3 c = q.emissionColor * q.emissionStrength * dot(normal, normalize(q.pos - p.pos)) * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
+            accLight += c;
+        }
+        fragColor = vec4(accLight, 1.f);
     }
 }
