@@ -149,15 +149,6 @@ namespace ImGui {
     }
 }
 
-enum Integration {
-    ImplicitEuler,
-    ExplicitEuler,
-    SemiImplicitEuler,
-    Midpoint,
-    RangaKatta4,
-    Verlet,
-};
-
 class Error : public std::exception {
     wchar_t msg[1024];
 public:
@@ -387,12 +378,29 @@ public:
     }
 };
 
+class NBodiment;
+
+struct Particle {
+    glm::vec3 pos;
+    glm::vec3 vel;
+    glm::vec3 acc;
+    float mass;
+    float temp;
+    float radius;
+
+    glm::vec3 albedo;
+    glm::vec3 emissionColor;
+    float emissionStrength;
+    float metallicity;
+    float roughness;
+};
+
 class Camera {
-    GLuint shader;
+    GLuint shader = NULL;
 public:
-    glm::vec3 position = { 0.f,  0.f,  1.f };
+    glm::vec3 position =  { 0.f,  0.f, 10.f };
     glm::vec3 direction = { 0.f,  0.f, -1.f };
-    glm::vec3 upvector = { 0.f,  1.f,  0.f };
+    glm::vec3 upvector =  { 0.f,  1.f,  0.f };
 
     float yaw = -90.0f;
     float pitch = 0.0f;
@@ -405,18 +413,19 @@ public:
 
     bool mouseLocked = false;
 
-    void projMat(float w, float h, const GLuint shaderID, bool no_translation = false) {
+    void projMat(float w, float h, const GLuint shaderID, bool no_translation, Particle* p = nullptr) {
         auto view = glm::mat4(1.f);
         auto proj = glm::mat4(1.f);
         shader = shaderID;
+        if (p) position = p->pos + glm::vec3(0.f, 0.f, p->radius * 5);
         view = glm::lookAt(position, direction + position, { 0.f, 1.f, 0.f });
         if (no_translation) view = glm::mat4(glm::mat3(view));
         proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
 
-        glUniformMatrix4fv(glGetUniformLocation(shaderID, "viewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(shaderID, "projMatrix"), 1, GL_FALSE, glm::value_ptr(proj));
-        glUniformMatrix4fv(glGetUniformLocation(shaderID, "invViewMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(view)));
-        glUniformMatrix4fv(glGetUniformLocation(shaderID, "invProjMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(proj)));
+        glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_FALSE, glm::value_ptr(proj));
+        glUniformMatrix4fv(glGetUniformLocation(shader, "invViewMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(view)));
+        glUniformMatrix4fv(glGetUniformLocation(shader, "invProjMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(proj)));
     }
 
     void processInput(std::bitset<6> keys, float dt) {
@@ -428,7 +437,7 @@ public:
             speed * dt * (keys[0] && !keys[2] ? 1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
             speed * dt * (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
             speed * dt * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * glm::cross(upvec, direction)
-            });
+        });
         glUniform3f(glGetUniformLocation(shader, "cameraPos"), position.x, position.y, position.z);
         glUniform3f(glGetUniformLocation(shader, "cameraUpVec"), upvec.x, upvec.y, upvec.z);
     }
@@ -447,27 +456,13 @@ public:
     }
 };
 
-struct Particle {
-    glm::vec3 pos;
-    glm::vec3 vel;
-    glm::vec3 acc;
-    float mass;
-    float temp;
-    float radius;
-
-    glm::vec3 albedo;
-    glm::vec3 emissionColor;
-    float emissionStrength;
-    float metallicity;
-    float roughness;
-};
-
 class NBodiment {
+public:
     Shader shader;
     ComputeShader cmptshader;
     Skybox skybox;
     Camera camera;
-    GLuint vs_ssbo;
+    GLuint ssbo;
     GLuint ms_ssbo;
 
     GLFWwindow* window;
@@ -485,7 +480,7 @@ class NBodiment {
     float timeStep = 0.05f;
 
     bool showMilkyway = true;
-    Particle selected;
+    int selected;
     bool hoveringParticle = false;
     bool lockedToParticle = false;
     glm::dvec2 mousePos;
@@ -493,7 +488,7 @@ class NBodiment {
     bool globalIllumination = false;
 
     glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
-protected:
+
     void load_texture(const char* path, unsigned int binding, GLenum dimension) {
         int width, height, nrChannels;
         unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
@@ -516,7 +511,7 @@ protected:
         glTexParameteri(dimension, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         stbi_image_free(data);
     }
-public:
+
     NBodiment() {
         std::setlocale(LC_CTYPE, ".UTF8");
 
@@ -572,7 +567,7 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-20.0f, 20.0f);
+        std::uniform_real_distribution<float> pos(-10.0f, 10.0f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
         std::uniform_real_distribution<float> mass(1e+8, 1e+8);
 
@@ -586,7 +581,7 @@ public:
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
             .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .emissionStrength = 200.f,
+            .emissionStrength = 50.f,
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
@@ -602,7 +597,7 @@ public:
                 .temp = 300,
                 .radius = cbrt((3.f * (m / 10e+9f)) / (4.f * (float)(M_PI))),
 
-                .albedo = c,
+                .albedo = { 1.f, 1.f, 1.f },
                 .emissionColor = c,
                 .emissionStrength = 0.f,
                 .metallicity = 0.f,
@@ -610,10 +605,10 @@ public:
             }));
         }
 
-        glGenBuffers(1, &vs_ssbo);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, vs_ssbo);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), pBuffer.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vs_ssbo);
+        glGenBuffers(1, &ssbo);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(pBuffer.data()), GL_DYNAMIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
 
         cmptshader = ComputeShader();
         cmptshader.create();
@@ -724,17 +719,23 @@ public:
         double lastFrame = 0;
         double fps = 0;
 
-        float* buffer = new float[pBuffer.size() * sizeof(Particle)] { 0.f };
         do {
             double currentTime = glfwGetTime();
             double dt = currentTime - lastFrame;
             fps = 1.0 / dt;
 
-            if (!lockedToParticle) {
+            if (lockedToParticle) {
+                constexpr int s = sizeof(Particle);
+                Particle pbuf[1]{};
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+                glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(selected * s), s, reinterpret_cast<float*>(pbuf));
+                pBuffer[selected] = pbuf[0];
+            }
+            else {
                 if (timeStep != 0) {
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vs_ssbo);
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
                     GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                    memcpy(buffer, p, pBuffer.size() * sizeof(Particle));
+                    memcpy(reinterpret_cast<float*>(pBuffer.data()), p, pBuffer.size() * sizeof(Particle));
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                 }
                 glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
@@ -749,7 +750,7 @@ public:
                 int closest = -1;
                 float minT = std::numeric_limits<float>::max();
                 for (int i = 0; i < pBuffer.size(); i++) {
-                    Particle p = reinterpret_cast<Particle*>(buffer)[i];
+                    Particle p = pBuffer[i];
 
                     glm::vec3 origin = camera.position - p.pos;
                     float a = glm::dot(direction, direction);
@@ -765,7 +766,7 @@ public:
                     }
                 }
                 hoveringParticle = closest >= 0;
-                if (hoveringParticle) selected = reinterpret_cast<Particle*>(buffer)[closest];
+                if (hoveringParticle) selected = closest;
             }
 
             glfwPollEvents();
@@ -785,6 +786,7 @@ public:
                     ImGuiWindowFlags_NoMove
                 )) {
                     ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
+                    ImGui::DragFloat3("Camera position", glm::value_ptr(camera.position), 0.1f);
                     ImGui::SeparatorText("Simulation");
                     ImGui::SliderFloat("Time step", &timeStep, 0.f, 10.0f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
                     ImGui::SeparatorText("Environment");
@@ -833,15 +835,16 @@ public:
                     ImGuiWindowFlags_NoTitleBar |
                     ImGuiWindowFlags_NoMove
                 );
-                ImGui::Text("X:% 06f", selected.pos.x); ImGui::SameLine();
-                ImGui::Text("Y:% 06f", selected.pos.y); ImGui::SameLine();
-                ImGui::Text("Z:% 06f", selected.pos.z);
-                ImGui::Text("Velocity: %.3g m/s", glm::length(selected.vel));
-                ImGui::Text("Acceleration: %.3g m/s^2", glm::length(selected.acc));
-                ImGui::Text("Mass: %.9g kg", selected.mass);
-                ImGui::Text("Temperature: %.9g K", selected.temp);
-                ImGui::Text("Radius: %.9g m", selected.radius);
-                ImGui::Text("Density: %.9g kg/m^3", selected.mass / (4.f * M_PI * pow(selected.radius, 3) / 3.f));
+                Particle p = pBuffer[selected];
+                ImGui::Text("X:% 06f", p.pos.x); ImGui::SameLine();
+                ImGui::Text("Y:% 06f", p.pos.y); ImGui::SameLine();
+                ImGui::Text("Z:% 06f", p.pos.z);
+                ImGui::Text("Velocity: %.3g m/s", glm::length(p.vel));
+                ImGui::Text("Acceleration: %.3g m/s^2", glm::length(p.acc));
+                ImGui::Text("Mass: %.9g kg", p.mass);
+                ImGui::Text("Temperature: %.9g K", p.temp);
+                ImGui::Text("Radius: %.9g m", p.radius);
+                ImGui::Text("Density: %.9g kg/m^3", p.mass / (4.f * M_PI * pow(p.radius, 3) / 3.f));
                 ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
                 ImGui::PopFont();
                 ImGui::End();
@@ -853,18 +856,19 @@ public:
             if (showMilkyway) {
                 glDepthFunc(GL_LEQUAL);
                 skybox.use();
-                camera.projMat(res.x, res.y, skybox.id, true);
+                camera.projMat(res.x, res.y, skybox.id, true, nullptr);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
                 glDepthFunc(GL_LESS);
             }
 
             cmptshader.use();
             glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
+            glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), true);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
             shader.use();
-            camera.projMat(res.x, res.y, shader.id, false);
+            camera.projMat(res.x, res.y, shader.id, false, lockedToParticle ? pBuffer.data() + selected : nullptr);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
             glDrawArrays(GL_TRIANGLES, 0, 6);

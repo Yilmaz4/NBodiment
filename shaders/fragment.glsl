@@ -18,6 +18,7 @@ struct Particle {
     float metallicity;
     float roughness;
 };
+const int offset = 21;
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
@@ -124,7 +125,7 @@ float intersect(in vec3 origin, in vec3 dir, in vec3 pos, in float radius) {
 int index(in vec3 origin, in vec3 direction, out float mt) {
     int pidx = -1;
     mt = 1.f / 0.f;
-    for (int i = 0; i < numParticles * 21; i += 21) {
+    for (int i = 0; i < numParticles * offset; i += offset) {
         Particle p = read(i);
         if (p.radius == 0) continue;
         float t = intersect(origin, direction, p.pos, p.radius);
@@ -185,7 +186,7 @@ void main() {
         int pidx = -1;
         int lightSources[numParticles];
         int lidx = 0;
-        for (int i = 0; i < numParticles * 21; i += 21) {
+        for (int i = 0; i < numParticles * offset; i += offset) {
             Particle p = read(i);
             if (p.emissionStrength > 0.f) lightSources[lidx++] = i;
             if (p.radius == 0) continue;
