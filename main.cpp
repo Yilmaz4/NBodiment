@@ -504,6 +504,7 @@ public:
 
     bool showMilkyway = true;
     int selected;
+    int following;
     bool hoveringParticle = false;
     bool lockedToParticle = false;
     glm::dvec2 mousePos;
@@ -735,6 +736,7 @@ public:
             }
             else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval) {
                 app->lockedToParticle = true;
+                app->following = app->selected;
             }
         }
     }
@@ -748,53 +750,47 @@ public:
             double dt = currentTime - lastFrame;
             fps = 1.0 / dt;
 
-            if (lockedToParticle) {
-                constexpr int s = sizeof(Particle);
-                Particle pbuf[1]{};
+            if (timeStep != 0) {
                 glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-                glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(selected * s), s, reinterpret_cast<float*>(pbuf));
-                pBuffer[selected] = pbuf[0];
+                GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                memcpy(reinterpret_cast<float*>(pBuffer.data()), p, pBuffer.size() * sizeof(Particle));
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
             }
-            else {
-                if (timeStep != 0) {
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-                    GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                    memcpy(reinterpret_cast<float*>(pBuffer.data()), p, pBuffer.size() * sizeof(Particle));
-                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
+            glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
+            glm::mat4 view;
+            if (following) view = glm::lookAt(camera.position, camera.position - camera.localCoords, { 0.f, 1.f, 0.f });
+            else view = glm::lookAt(camera.position, camera.direction + camera.position, { 0.f, 1.f, 0.f });
+            glm::mat4 proj = glm::perspective(glm::radians(camera.fov), static_cast<float>(res.x) / static_cast<float>(res.y), camera.nearPlane, camera.farPlane);
+            glm::mat4 invView = glm::inverse(view);
+            glm::mat4 invProj = glm::inverse(proj);
+            glm::vec3 direction = glm::vec3(invView * glm::vec4(glm::normalize(glm::vec3(invProj * glm::vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
+            int closest = -1;
+            float minT = std::numeric_limits<float>::max();
+            for (int i = 0; i < pBuffer.size(); i++) {
+                if (lockedToParticle && i == following) {
+                    continue;
                 }
-                glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
-                glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
-                auto view = glm::mat4(1.f);
-                auto proj = glm::mat4(1.f);
-                view = glm::lookAt(camera.position, camera.direction + camera.position, { 0.f, 1.f, 0.f });
-                proj = glm::perspective(glm::radians(camera.fov), static_cast<float>(res.x) / static_cast<float>(res.y), camera.nearPlane, camera.farPlane);
-                glm::mat4 invView = glm::inverse(view);
-                glm::mat4 invProj = glm::inverse(proj);
-                glm::vec3 direction = glm::vec3(invView * glm::vec4(glm::normalize(glm::vec3(invProj * glm::vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
-                int closest = -1;
-                float minT = std::numeric_limits<float>::max();
-                for (int i = 0; i < pBuffer.size(); i++) {
-                    Particle p = pBuffer[i];
+                Particle p = pBuffer[i];
 
-                    glm::vec3 origin = camera.position - p.pos;
-                    float a = glm::dot(direction, direction);
-                    float b = 2.f * glm::dot(origin, direction);
-                    float c = glm::dot(origin, origin) - p.radius * p.radius * 4.f;
+                glm::vec3 origin = camera.position - p.pos;
+                float a = glm::dot(direction, direction);
+                float b = 2.f * glm::dot(origin, direction);
+                float c = glm::dot(origin, origin) - p.radius * p.radius * 4.f;
 
-                    float d = b * b - 4.f * a * c;
-                    if (d <= 0.f) continue;
-                    float t = (-b - sqrt(d)) / (2.f * a);
-                    if (t < minT && t >= 0) {
-                        minT = t;
-                        closest = i;
-                    }
+                float d = b * b - 4.f * a * c;
+                if (d <= 0.f) continue;
+                float t = (-b - sqrt(d)) / (2.f * a);
+                if (t < minT && t >= 0) {
+                    minT = t;
+                    closest = i;
                 }
-                hoveringParticle = closest >= 0;
-                if (hoveringParticle) selected = closest;
             }
+            hoveringParticle = closest >= 0;
+            if (hoveringParticle) selected = closest;
 
             glfwPollEvents();
-            camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + selected : nullptr);
+            camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + following : nullptr);
             bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0 || hoveringParticle);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
@@ -848,7 +844,7 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
-            if (hoveringParticle && !camera.mouseLocked && !lockedToParticle && !ImGui::GetIO().WantCaptureMouse) {
+            if (hoveringParticle && !camera.mouseLocked && !ImGui::GetIO().WantCaptureMouse) {
                 ImGui::PushFont(ImGui::font);
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);
