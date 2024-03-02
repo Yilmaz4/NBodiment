@@ -402,6 +402,10 @@ public:
     glm::vec3 direction = { 0.f,  0.f, -1.f };
     glm::vec3 upvector =  { 0.f,  1.f,  0.f };
 
+    glm::vec3 localCoords;
+    float proximity = 5;
+    Particle* following;
+
     float yaw = -90.0f;
     float pitch = 0.0f;
 
@@ -413,46 +417,65 @@ public:
 
     bool mouseLocked = false;
 
-    void projMat(float w, float h, const GLuint shaderID, bool no_translation, Particle* p = nullptr) {
-        auto view = glm::mat4(1.f);
-        auto proj = glm::mat4(1.f);
+    void projMat(float w, float h, const GLuint shaderID, bool no_translation) {
         shader = shaderID;
-        if (p) position = p->pos + glm::vec3(0.f, 0.f, p->radius * 5);
-        view = glm::lookAt(position, direction + position, { 0.f, 1.f, 0.f });
+        glm::mat4 view;
+        if (following && !no_translation)
+            view = glm::lookAt(position, position - localCoords, { 0.f, 1.f, 0.f });
+        else
+            view = glm::lookAt(position, direction + position, { 0.f, 1.f, 0.f });
         if (no_translation) view = glm::mat4(glm::mat3(view));
-        proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
-
+        auto proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
+        
         glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_FALSE, glm::value_ptr(proj));
         glUniformMatrix4fv(glGetUniformLocation(shader, "invViewMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(view)));
         glUniformMatrix4fv(glGetUniformLocation(shader, "invProjMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(proj)));
     }
 
-    void processInput(std::bitset<6> keys, float dt) {
-        glm::vec3 upvec = direction;
-        upvec.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
-        upvec.y = sin(glm::radians(pitch + 90));
-        upvec.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
-        position += glm::vec3({
-            speed * dt * (keys[0] && !keys[2] ? 1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
-            speed * dt * (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
-            speed * dt * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * glm::cross(upvec, direction)
-        });
-        glUniform3f(glGetUniformLocation(shader, "cameraPos"), position.x, position.y, position.z);
-        glUniform3f(glGetUniformLocation(shader, "cameraUpVec"), upvec.x, upvec.y, upvec.z);
+    void processInput(std::bitset<6> keys, float dt, Particle* p = nullptr) {
+        following = p;
+
+        if (!p) {
+            glm::vec3 upvec = direction;
+            upvec.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
+            upvec.y = sin(glm::radians(pitch + 90));
+            upvec.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
+
+            position += glm::vec3({
+                speed * dt * (keys[0] && !keys[2] ? 1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
+                speed * dt * (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
+                speed * dt * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * glm::cross(upvec, direction)
+            });
+        }
+        else {
+            proximity += speed * dt * (keys[0] && !keys[2] ? -1.f : (keys[2] && !keys[0] ? 1.f : 0.f));
+            if (proximity < 1.2) proximity = 1.2;
+            rotate(0, 0);
+            position = following->pos + localCoords;
+        }
+
+        glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, glm::value_ptr(position));
     }
 
     void rotate(float xoffset, float yoffset) {
         yaw += xoffset * sensitivity;
         pitch += yoffset * sensitivity;
 
-        if (pitch > 89.0f) pitch = 89.0f;
+        if (pitch >  89.0f) pitch =  89.0f;
         if (pitch < -89.0f) pitch = -89.0f;
 
         direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
         direction.y = sin(glm::radians(pitch));
         direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
         direction = glm::normalize(direction);
+
+        if (following) {
+            localCoords.x = cos(glm::radians(yaw)) * cos(glm::radians(-pitch));
+            localCoords.y = sin(glm::radians(-pitch));
+            localCoords.z = sin(glm::radians(yaw)) * cos(glm::radians(-pitch));
+            localCoords = glm::normalize(localCoords) * (following->radius * proximity);
+        }
     }
 };
 
@@ -567,7 +590,7 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-10.0f, 10.0f);
+        std::uniform_real_distribution<float> pos(-20.0f, 20.0f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
         std::uniform_real_distribution<float> mass(1e+8, 1e+8);
 
@@ -585,7 +608,7 @@ public:
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 50; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             glm::vec3 c = { col(rng), col(rng), col(rng) };
             float m = mass(rng);
@@ -597,7 +620,7 @@ public:
                 .temp = 300,
                 .radius = cbrt((3.f * (m / 10e+9f)) / (4.f * (float)(M_PI))),
 
-                .albedo = { 1.f, 1.f, 1.f },
+                .albedo = c,
                 .emissionColor = c,
                 .emissionStrength = 0.f,
                 .metallicity = 0.f,
@@ -703,6 +726,7 @@ public:
 
     static inline void on_mousePress(GLFWwindow* window, int button, int action, int mods) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
+        if (ImGui::GetIO().WantCaptureMouse) return;
         switch (button) {
         case GLFW_MOUSE_BUTTON_LEFT:
             if (action == GLFW_PRESS) {
@@ -770,7 +794,7 @@ public:
             }
 
             glfwPollEvents();
-            camera.processInput(this->keys, static_cast<float>(dt));
+            camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + selected : nullptr);
             bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0 || hoveringParticle);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
@@ -856,7 +880,7 @@ public:
             if (showMilkyway) {
                 glDepthFunc(GL_LEQUAL);
                 skybox.use();
-                camera.projMat(res.x, res.y, skybox.id, true, nullptr);
+                camera.projMat(res.x, res.y, skybox.id, true);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
                 glDepthFunc(GL_LESS);
             }
@@ -868,7 +892,7 @@ public:
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
             shader.use();
-            camera.projMat(res.x, res.y, shader.id, false, lockedToParticle ? pBuffer.data() + selected : nullptr);
+            camera.projMat(res.x, res.y, shader.id, false);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
             glDrawArrays(GL_TRIANGLES, 0, 6);

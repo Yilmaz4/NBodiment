@@ -203,7 +203,7 @@ void main() {
         Particle p = read(pidx);
         vec3 hit = origin + direction * mt;
         vec3 normal = normalize(hit - p.pos);
-        if (pidx == 0) {
+        if (false) {
             float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
             float v = acos(normal.y) / M_PI;
             p.albedo = texture2D(starTexture, vec2(u, v)).rgb;
@@ -218,6 +218,6 @@ void main() {
             vec3 c = q.emissionColor * q.emissionStrength * dot(normal, normalize(q.pos - p.pos)) * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
             accLight += c;
         }
-        fragColor = vec4(accLight, 1.f);
+        fragColor = vec4(accLight + p.emissionColor * p.emissionStrength, 1.f);
     }
 }
