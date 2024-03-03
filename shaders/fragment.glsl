@@ -142,14 +142,16 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
     vec3 rayColor = vec3(1.f);
     uint seed = uint(gl_FragCoord.y + screenSize.x * gl_FragCoord.x) * ridx;
 
+    Particle p;
     for (int depth = 0; depth < 10; depth++) {
         float mt;
         int pidx = index(origin, direction, mt);
         if (pidx == -1) {
             if (depth == 0) return vec3(-1.f);
+            accLight += p.albedo * ambientLight;
             break;
         }
-        Particle p = read(pidx);
+        p = read(pidx);
         vec3 hit = origin + direction * mt;
         origin = hit;
         vec3 normal = normalize(hit - p.pos);
@@ -215,9 +217,12 @@ void main() {
                 break;
             }
             Particle q = read(i);
-            vec3 c = q.emissionColor * q.emissionStrength * dot(normal, normalize(q.pos - p.pos)) * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
-            accLight += c;
+            float angle = dot(normal, normalize(q.pos - p.pos));
+            vec3 c = q.emissionColor * q.emissionStrength * angle * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
+            if (angle >= 0) accLight += c;
         }
-        fragColor = vec4(accLight + p.emissionColor * p.emissionStrength, 1.f);
+        vec3 color = accLight + p.emissionColor * p.emissionStrength + p.albedo * ambientLight;
+        //color = pow(color, vec3(1.0 / 2.2));
+        fragColor = vec4(color, 1.f);
     }
 }

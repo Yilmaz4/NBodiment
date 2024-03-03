@@ -511,7 +511,7 @@ public:
     int numRaysPerPixel = 10;
     bool globalIllumination = false;
 
-    glm::vec3 ambientLight = { 1.f, 1.f, 1.f };
+    glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
 
     void load_texture(const char* path, unsigned int binding, GLenum dimension) {
         int width, height, nrChannels;
@@ -591,7 +591,7 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-20.0f, 20.0f);
+        std::uniform_real_distribution<float> pos(-5.0f, 5.0f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
         std::uniform_real_distribution<float> mass(1e+8, 1e+8);
 
@@ -750,12 +750,11 @@ public:
             double dt = currentTime - lastFrame;
             fps = 1.0 / dt;
 
-            if (timeStep != 0) {
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-                GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                memcpy(reinterpret_cast<float*>(pBuffer.data()), p, pBuffer.size() * sizeof(Particle));
-                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            }
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            memcpy(reinterpret_cast<float*>(pBuffer.data()), p, pBuffer.size() * sizeof(Particle));
+            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
             glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
             glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
             glm::mat4 view;
@@ -768,9 +767,7 @@ public:
             int closest = -1;
             float minT = std::numeric_limits<float>::max();
             for (int i = 0; i < pBuffer.size(); i++) {
-                if (lockedToParticle && i == following) {
-                    continue;
-                }
+                if (lockedToParticle && i == following) continue;
                 Particle p = pBuffer[i];
 
                 glm::vec3 origin = camera.position - p.pos;
@@ -786,7 +783,7 @@ public:
                     closest = i;
                 }
             }
-            hoveringParticle = closest >= 0;
+            hoveringParticle = closest != -1.f;
             if (hoveringParticle) selected = closest;
 
             glfwPollEvents();
@@ -795,10 +792,10 @@ public:
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
+            ImVec2 size;
             if (!camera.mouseLocked) {
                 ImGui::PushFont(ImGui::font);
-                ImGui::SetNextWindowPos({ 10, 10 });
-                //ImGui::SetNextWindowCollapsed(true, 1 << 1);
+                ImGui::SetNextWindowPos({ 10.f, 10.f });
                 if (ImGui::Begin("Settings", nullptr,
                     ImGuiWindowFlags_NoScrollbar |
                     ImGuiWindowFlags_NoScrollWithMouse |
@@ -829,6 +826,7 @@ public:
                     ImGui::PopStyleColor();
                 }
                 ImGui::PopFont();
+                size = ImGui::GetWindowSize();
                 ImGui::End();
             }
             if (currentTime - lastSpeedChange < 2.0) {
@@ -865,6 +863,40 @@ public:
                 ImGui::Text("Temperature: %.9g K", p.temp);
                 ImGui::Text("Radius: %.9g m", p.radius);
                 ImGui::Text("Density: %.9g kg/m^3", p.mass / (4.f * M_PI * pow(p.radius, 3) / 3.f));
+                ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
+                ImGui::PopFont();
+                ImGui::End();
+            }
+            if (lockedToParticle && !camera.mouseLocked) {
+                ImGui::PushFont(ImGui::font);
+                ImGui::SetNextWindowPos({ 10.f, size.y + 20.f });
+                ImGui::SetNextWindowSize(ImVec2(size.x, 0.f));
+                ImGui::Begin("##pEdit", nullptr,
+                    ImGuiWindowFlags_AlwaysAutoResize |
+                    ImGuiWindowFlags_NoCollapse |
+                    ImGuiWindowFlags_NoTitleBar |
+                    ImGuiWindowFlags_NoMove
+                );
+                Particle p = pBuffer[following];
+                bool update = false;
+                float velocity = glm::length(p.vel);
+                update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.1f);
+                if (update |= ImGui::DragFloat("Velocity", &velocity, ((velocity / 10.f > 0.f) ? (velocity / 10.f) : 0.01f), 0.f, 0.f, "%.3g m/s", ImGuiSliderFlags_NoRoundToFormat)) {
+                    p.vel = glm::normalize(p.vel) * velocity;
+                }
+                update |= ImGui::DragFloat("Mass", &p.mass, p.mass / 10.f, 1.f, 0.f, "%.9g kg", ImGuiSliderFlags_NoRoundToFormat);
+                update |= ImGui::DragFloat("Temperature", &p.temp, p.temp / 10.f, 1.f, 0.f, "%.9g K", ImGuiSliderFlags_NoRoundToFormat);
+                update |= ImGui::DragFloat("Radius", &p.radius, p.radius / 10.f, 1.f, 0.f, "%.9g m", ImGuiSliderFlags_NoRoundToFormat);
+                ImGui::SeparatorText("Appearance");
+                update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
+                update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
+                update |= ImGui::DragFloat("Luminosity", &p.emissionStrength, 0.1f, 0.f);
+                update |= ImGui::SliderFloat("Roughness", &p.roughness, 0.f, 1.f);
+                if (update) {
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(following * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
+                }
                 ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
                 ImGui::PopFont();
                 ImGui::End();
