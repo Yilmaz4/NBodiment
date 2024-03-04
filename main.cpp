@@ -423,7 +423,7 @@ public:
         if (following && !no_translation)
             view = glm::lookAt(position, position - localCoords, { 0.f, 1.f, 0.f });
         else
-            view = glm::lookAt(position, direction + position, { 0.f, 1.f, 0.f });
+            view = glm::lookAt(position, position + direction, { 0.f, 1.f, 0.f });
         if (no_translation) view = glm::mat4(glm::mat3(view));
         auto proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
         
@@ -459,22 +459,28 @@ public:
     }
 
     void rotate(float xoffset, float yoffset) {
-        yaw += xoffset * sensitivity;
+        yaw   += xoffset * sensitivity * (following ? -1.f : 1.f);
         pitch += yoffset * sensitivity;
 
         if (pitch >  89.0f) pitch =  89.0f;
         if (pitch < -89.0f) pitch = -89.0f;
 
-        direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-        direction.y = sin(glm::radians(pitch));
-        direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-        direction = glm::normalize(direction);
-
         if (following) {
-            localCoords.x = cos(glm::radians(yaw)) * cos(glm::radians(-pitch));
-            localCoords.y = sin(glm::radians(-pitch));
-            localCoords.z = sin(glm::radians(yaw)) * cos(glm::radians(-pitch));
+            direction.x = cos(glm::radians(yaw - 180)) * cos(glm::radians(pitch - 180));
+            direction.y = sin(glm::radians(pitch - 180));
+            direction.z = sin(glm::radians(yaw - 180)) * cos(glm::radians(pitch - 180));
+            direction = glm::normalize(direction);
+
+            localCoords.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+            localCoords.y = sin(glm::radians(pitch));
+            localCoords.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
             localCoords = glm::normalize(localCoords) * (following->radius * proximity);
+        }
+        else {
+            direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+            direction.y = sin(glm::radians(pitch));
+            direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+            direction = glm::normalize(direction);
         }
     }
 };
@@ -503,9 +509,11 @@ public:
     float timeStep = 0.05f;
 
     bool showMilkyway = true;
+    int hovering;
     int selected;
     int following;
     bool hoveringParticle = false;
+    bool selectedParticle = false;
     bool lockedToParticle = false;
     glm::dvec2 mousePos;
     int numRaysPerPixel = 10;
@@ -591,9 +599,9 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-5.0f, 5.0f);
+        std::uniform_real_distribution<float> pos(-10.0f, 10.0f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
-        std::uniform_real_distribution<float> mass(1e+8, 1e+8);
+        std::uniform_real_distribution<float> mass(1e+6, 1e+8);
 
         pBuffer.push_back(Particle({
             .pos = glm::vec3(0.f),
@@ -609,7 +617,7 @@ public:
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
-        for (int i = 0; i < 50; i++) {
+        for (int i = 0; i < 100; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             glm::vec3 c = { col(rng), col(rng), col(rng) };
             float m = mass(rng);
@@ -669,6 +677,7 @@ public:
 
     static inline void on_windowResize(GLFWwindow* window, int w, int h) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
+        app->res = { w, h };
         glViewport(0, 0, app->res.x, app->res.y);
         glUniform2f(glGetUniformLocation(app->shader.id, "screenSize"), w, h);
     }
@@ -707,12 +716,17 @@ public:
 
     static inline void on_mouseMove(GLFWwindow* window, double x, double y) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
-        if (app->camera.mouseLocked) {
+        if (app->camera.mouseLocked || (app->lockedToParticle && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)) {
             float xoffset = x - app->prevMousePos.x;
             float yoffset = app->prevMousePos.y - y;
             app->prevMousePos = { x, y };
 
             app->camera.rotate(xoffset, yoffset);
+        }
+        else if (app->lockedToParticle) {
+            double x, y;
+            glfwGetCursorPos(window, &x, &y);
+            app->prevMousePos = { x, y };
         }
     }
 
@@ -733,11 +747,27 @@ public:
             if (action == GLFW_PRESS) {
                 app->lastPresses.x = app->lastPresses.y;
                 app->lastPresses.y = glfwGetTime();
+                app->selectedParticle = true;
+                app->selected = app->hovering;
             }
             else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval) {
                 app->lockedToParticle = true;
                 app->following = app->selected;
             }
+            break;
+        case GLFW_MOUSE_BUTTON_RIGHT:
+            if (!app->lockedToParticle) return;
+            if (action == GLFW_PRESS) {
+                double x, y;
+                glfwGetCursorPos(window, &x, &y);
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                app->prevMousePos = { x, y };
+            }
+            else {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                glfwSetCursorPos(window, app->prevMousePos.x, app->prevMousePos.y);
+            }
+                
         }
     }
 
@@ -759,7 +789,7 @@ public:
             glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
             glm::mat4 view;
             if (following) view = glm::lookAt(camera.position, camera.position - camera.localCoords, { 0.f, 1.f, 0.f });
-            else view = glm::lookAt(camera.position, camera.direction + camera.position, { 0.f, 1.f, 0.f });
+            else view = glm::lookAt(camera.position, camera.position + camera.direction, { 0.f, 1.f, 0.f });
             glm::mat4 proj = glm::perspective(glm::radians(camera.fov), static_cast<float>(res.x) / static_cast<float>(res.y), camera.nearPlane, camera.farPlane);
             glm::mat4 invView = glm::inverse(view);
             glm::mat4 invProj = glm::inverse(proj);
@@ -784,7 +814,7 @@ public:
                 }
             }
             hoveringParticle = closest != -1.f;
-            if (hoveringParticle) selected = closest;
+            if (hoveringParticle) hovering = closest;
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + following : nullptr);
@@ -853,7 +883,7 @@ public:
                     ImGuiWindowFlags_NoTitleBar |
                     ImGuiWindowFlags_NoMove
                 );
-                Particle p = pBuffer[selected];
+                Particle p = pBuffer[hovering];
                 ImGui::Text("X:% 06f", p.pos.x); ImGui::SameLine();
                 ImGui::Text("Y:% 06f", p.pos.y); ImGui::SameLine();
                 ImGui::Text("Z:% 06f", p.pos.z);
@@ -867,35 +897,58 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
-            if (lockedToParticle && !camera.mouseLocked) {
+            if (selectedParticle && !camera.mouseLocked) {
                 ImGui::PushFont(ImGui::font);
                 ImGui::SetNextWindowPos({ 10.f, size.y + 20.f });
                 ImGui::SetNextWindowSize(ImVec2(size.x, 0.f));
-                ImGui::Begin("##pEdit", nullptr,
+                ImGui::Begin("Selected particle", nullptr,
                     ImGuiWindowFlags_AlwaysAutoResize |
-                    ImGuiWindowFlags_NoCollapse |
-                    ImGuiWindowFlags_NoTitleBar |
                     ImGuiWindowFlags_NoMove
                 );
-                Particle p = pBuffer[following];
+                Particle p = pBuffer[selected];
                 bool update = false;
                 float velocity = glm::length(p.vel);
                 update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.1f);
-                if (update |= ImGui::DragFloat("Velocity", &velocity, ((velocity / 10.f > 0.f) ? (velocity / 10.f) : 0.01f), 0.f, 0.f, "%.3g m/s", ImGuiSliderFlags_NoRoundToFormat)) {
+                if (update |= ImGui::DragFloat("Velocity", &velocity, ((velocity / 10.f != 0.f) ? (velocity / 10.f) : 0.01f), 0.f, 0.f, "%.3g m/s", ImGuiSliderFlags_AlwaysClamp)) {
                     p.vel = glm::normalize(p.vel) * velocity;
                 }
-                update |= ImGui::DragFloat("Mass", &p.mass, p.mass / 10.f, 1.f, 0.f, "%.9g kg", ImGuiSliderFlags_NoRoundToFormat);
-                update |= ImGui::DragFloat("Temperature", &p.temp, p.temp / 10.f, 1.f, 0.f, "%.9g K", ImGuiSliderFlags_NoRoundToFormat);
-                update |= ImGui::DragFloat("Radius", &p.radius, p.radius / 10.f, 1.f, 0.f, "%.9g m", ImGuiSliderFlags_NoRoundToFormat);
+                update |= ImGui::DragFloat("Mass", &p.mass, ((p.mass / 10.f != 0.f) ? (p.mass / 10.f) : 0.01f), 1.f, 0.f, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                update |= ImGui::DragFloat("Temperature", &p.temp, ((p.temp / 10.f > 0.f) ? (p.temp / 10.f) : 0.01f), 1.f, 0.f, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+                update |= ImGui::DragFloat("Radius", &p.radius, ((p.radius / 10.f > 0.f) ? (p.radius / 10.f) : 0.01f), 1.f, 0.f, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
                 ImGui::SeparatorText("Appearance");
                 update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
                 update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
                 update |= ImGui::DragFloat("Luminosity", &p.emissionStrength, 0.1f, 0.f);
                 update |= ImGui::SliderFloat("Roughness", &p.roughness, 0.f, 1.f);
+                ImGui::SeparatorText("Actions");
+                if (!(lockedToParticle && following == selected) && ImGui::Button("Follow")) {
+                    lockedToParticle = true;
+                    following = selected;
+                }
+                else if (lockedToParticle && following == selected && ImGui::Button("Unfollow")) {
+                    lockedToParticle = false;
+                    camera.direction = -camera.localCoords;
+                    camera.yaw -= 180;
+                    camera.pitch = -camera.pitch;
+                }
+                    
+                ImGui::SameLine();
+                if (ImGui::Button("Delete")) {
+                    p.mass = 0.f;
+                    p.radius = 0.f;
+                    if (lockedToParticle && following == selected) {
+                        lockedToParticle = false;
+                        camera.direction = -camera.localCoords;
+                        camera.yaw -= 180;
+                        camera.pitch -= 180;
+                    }
+                    selectedParticle = false;
+                    update = true;
+                }
                 if (update) {
                     glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                    glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(following * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
+                    glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(selected * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
                 }
                 ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
                 ImGui::PopFont();

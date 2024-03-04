@@ -222,7 +222,6 @@ void main() {
             if (angle >= 0) accLight += c;
         }
         vec3 color = accLight + p.emissionColor * p.emissionStrength + p.albedo * ambientLight;
-        //color = pow(color, vec3(1.0 / 2.2));
         fragColor = vec4(color, 1.f);
     }
 }
