@@ -403,8 +403,11 @@ public:
     glm::vec3 upvector =  { 0.f,  1.f,  0.f };
 
     glm::vec3 localCoords;
+    glm::vec3 localUp;
     float proximity = 5;
     Particle* following;
+    float theta = 0.f;
+    float phi = 0.f;
 
     float yaw = -90.0f;
     float pitch = 0.0f;
@@ -465,22 +468,21 @@ public:
         if (pitch >  89.0f) pitch =  89.0f;
         if (pitch < -89.0f) pitch = -89.0f;
 
-        if (following) {
-            direction.x = cos(glm::radians(yaw - 180)) * cos(glm::radians(pitch - 180));
-            direction.y = sin(glm::radians(pitch - 180));
-            direction.z = sin(glm::radians(yaw - 180)) * cos(glm::radians(pitch - 180));
-            direction = glm::normalize(direction);
+        direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        direction.y = sin(glm::radians(pitch));
+        direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        direction = glm::normalize(direction);
 
-            localCoords.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-            localCoords.y = sin(glm::radians(pitch));
-            localCoords.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        if (following) {
+            theta -= xoffset * sensitivity;
+            phi   -= yoffset * sensitivity;
+
+            localCoords.x = cos(glm::radians(theta)) * cos(glm::radians(phi));
+            localCoords.y = sin(glm::radians(phi));
+            localCoords.z = sin(glm::radians(theta)) * cos(glm::radians(phi));
             localCoords = glm::normalize(localCoords) * (following->radius * proximity);
-        }
-        else {
-            direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-            direction.y = sin(glm::radians(pitch));
-            direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-            direction = glm::normalize(direction);
+            localUp = localCoords;
+            localUp.x = cos(glm::radians(theta)) * cos(glm::radians(phi));
         }
     }
 };
@@ -504,9 +506,9 @@ public:
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5.0;
-    double doubleClickInterval = 0.5;
+    double doubleClickInterval = 0.4;
     glm::dvec2 lastPresses = { -doubleClickInterval, 0.0 };
-    float timeStep = 0.05f;
+    float timeStep = 1.0f;
 
     bool showMilkyway = true;
     int hovering;
@@ -518,6 +520,7 @@ public:
     glm::dvec2 mousePos;
     int numRaysPerPixel = 10;
     bool globalIllumination = false;
+    bool shadows = true;
 
     glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
 
@@ -599,7 +602,7 @@ public:
 
         std::random_device rd;
         std::mt19937 rng(rd());
-        std::uniform_real_distribution<float> pos(-10.0f, 10.0f);
+        std::uniform_real_distribution<float> pos(-5.0f, 5.0f);
         std::uniform_real_distribution<float> col(0.f, 1.f);
         std::uniform_real_distribution<float> mass(1e+6, 1e+8);
 
@@ -620,6 +623,7 @@ public:
         for (int i = 0; i < 100; i++) {
             glm::vec3 p = { pos(rng), pos(rng), pos(rng) };
             glm::vec3 c = { col(rng), col(rng), col(rng) };
+            if (glm::distance(p, pBuffer[0].pos) < 4.f) continue;
             float m = mass(rng);
             pBuffer.push_back(Particle({
                 .pos = p,
@@ -659,6 +663,7 @@ public:
         glUniform1i(glGetUniformLocation(shader.id, "numParticles"), pBuffer.size());
         glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
         glUniform1i(glGetUniformLocation(shader.id, "globalIllumination"), globalIllumination);
+        glUniform1i(glGetUniformLocation(shader.id, "shadows"), shadows);
 
         load_texture("assets/8k_earth_daymap.jpg", 0, GL_TEXTURE_2D);
         load_texture("assets/8k_earth_clouds.jpg", 1, GL_TEXTURE_2D);
@@ -747,10 +752,10 @@ public:
             if (action == GLFW_PRESS) {
                 app->lastPresses.x = app->lastPresses.y;
                 app->lastPresses.y = glfwGetTime();
-                app->selectedParticle = true;
+                app->selectedParticle = app->hoveringParticle;
                 app->selected = app->hovering;
             }
-            else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval) {
+            else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval && app->selected == app->hovering) {
                 app->lockedToParticle = true;
                 app->following = app->selected;
             }
@@ -788,7 +793,7 @@ public:
             glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
             glm::vec2 coord = (glm::vec2({ mousePos.x, res.y - mousePos.y })) / glm::vec2(res);
             glm::mat4 view;
-            if (following) view = glm::lookAt(camera.position, camera.position - camera.localCoords, { 0.f, 1.f, 0.f });
+            if (lockedToParticle) view = glm::lookAt(camera.position, camera.position - camera.localCoords, { 0.f, 1.f, 0.f });
             else view = glm::lookAt(camera.position, camera.position + camera.direction, { 0.f, 1.f, 0.f });
             glm::mat4 proj = glm::perspective(glm::radians(camera.fov), static_cast<float>(res.x) / static_cast<float>(res.y), camera.nearPlane, camera.farPlane);
             glm::mat4 invView = glm::inverse(view);
@@ -848,12 +853,14 @@ public:
                         if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
                             glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
                     }
+                    ImGui::Separator();
+                    if (!globalIllumination) {
+                        if (ImGui::ToggleButton("Shadows", &shadows))
+                            glUniform1i(glGetUniformLocation(shader.id, "shadows"), shadows);
+                    }
                     ImGui::SeparatorText("Camera");
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(80, 80, 80, 255));
-                    ImGui::Text("(c) 2017-2024 Yilmaz Alpaslan");
-                    ImGui::PopStyleColor();
                 }
                 ImGui::PopFont();
                 size = ImGui::GetWindowSize();

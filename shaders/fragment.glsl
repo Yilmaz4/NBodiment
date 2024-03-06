@@ -108,6 +108,7 @@ uniform vec3 cameraPos;
 uniform vec3 ambientLight;
 uniform int numRaysPerPixel;
 uniform bool globalIllumination;
+uniform bool shadows;
 
 out vec4 fragColor;
 
@@ -217,6 +218,8 @@ void main() {
                 break;
             }
             Particle q = read(i);
+            float mt = 0.f;
+            if (shadows && index(hit, q.pos - hit, mt) != i) continue;
             float angle = dot(normal, normalize(q.pos - p.pos));
             vec3 c = q.emissionColor * q.emissionStrength * angle * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
             if (angle >= 0) accLight += c;
