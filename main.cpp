@@ -916,16 +916,16 @@ public:
                 bool update = false;
                 float velocity = glm::length(p.vel);
                 update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.1f);
-                if (update |= ImGui::DragFloat("Velocity", &velocity, ((velocity / 10.f != 0.f) ? (velocity / 10.f) : 0.01f), 0.f, 0.f, "%.3g m/s", ImGuiSliderFlags_AlwaysClamp)) {
+                if (update |= ImGui::DragFloat("Velocity", &velocity, (velocity / 10), FLT_MIN, FLT_MAX, "%.3g m/s", ImGuiSliderFlags_AlwaysClamp)) {
                     p.vel = glm::normalize(p.vel) * velocity;
                 }
-                update |= ImGui::DragFloat("Mass", &p.mass, ((p.mass / 10.f != 0.f) ? (p.mass / 10.f) : 0.01f), 1.f, 0.f, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-                update |= ImGui::DragFloat("Temperature", &p.temp, ((p.temp / 10.f > 0.f) ? (p.temp / 10.f) : 0.01f), 1.f, 0.f, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
-                update |= ImGui::DragFloat("Radius", &p.radius, ((p.radius / 10.f > 0.f) ? (p.radius / 10.f) : 0.01f), 1.f, 0.f, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
+                update |= ImGui::DragFloat("Mass", &p.mass, (p.mass / 10.f), FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                update |= ImGui::DragFloat("Temperature", &p.temp, (p.temp / 10.f), FLT_MIN, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+                update |= ImGui::DragFloat("Radius", &p.radius, (p.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
                 ImGui::SeparatorText("Appearance");
                 update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
                 update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
-                update |= ImGui::DragFloat("Luminosity", &p.emissionStrength, 0.1f, 0.f);
+                update |= ImGui::DragFloat("Luminosity", &p.emissionStrength, 0.5f, FLT_MIN, FLT_MAX);
                 update |= ImGui::SliderFloat("Roughness", &p.roughness, 0.f, 1.f);
                 ImGui::SeparatorText("Actions");
                 if (!(lockedToParticle && following == selected) && ImGui::Button("Follow")) {
