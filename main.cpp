@@ -509,6 +509,7 @@ public:
     double doubleClickInterval = 0.4;
     glm::dvec2 lastPresses = { -doubleClickInterval, 0.0 };
     float timeStep = 1.0f;
+    int collisionType = 0;
 
     bool showMilkyway = true;
     int hovering;
@@ -534,7 +535,7 @@ public:
     float max_temperature = 1e+4f;
     bool orbital_velocity = true;
     float min_velocity = 0.f;
-    float max_velocity = 1e+2f;
+    float max_velocity = 1.f;
 
     float central_mass = 1e+10f;
     float central_density = 1e+9f;
@@ -630,6 +631,7 @@ public:
         cmptshader.create();
         cmptshader.use();
         glShaderStorageBlockBinding(cmptshader.id, glGetProgramResourceIndex(cmptshader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
+        glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
 
         skybox = Skybox();
         skybox.create();
@@ -752,7 +754,6 @@ public:
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 glfwSetCursorPos(window, app->prevMousePos.x, app->prevMousePos.y);
             }
-                
         }
     }
 
@@ -887,9 +888,24 @@ public:
                     ImGuiWindowFlags_AlwaysAutoResize |
                     ImGuiWindowFlags_NoMove
                 )) {
-                    ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1000.0 * (currentTime - lastFrame));
+                    ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1e+3 * (currentTime - lastFrame));
                     ImGui::SeparatorText("Simulation");
-                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 10.0f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 100.f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+
+                    const char* types[] = { "Elastic", "Inelastic", "No collision"};
+                    const char* preview = types[collisionType];
+
+                    if (ImGui::BeginCombo("Collision type", preview)) {
+                        for (int n = 0; n < 3; n++) {
+                            const bool is_selected = (collisionType == n);
+                            if (ImGui::Selectable(types[n], is_selected)) {
+                                collisionType = n;
+                            }
+                            if (is_selected) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+
                     ImGui::SeparatorText("Environment");
                     ImGui::Checkbox("Milky way background", &showMilkyway);
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
@@ -945,12 +961,7 @@ public:
                         ImGui::DragFloat("Max##velocity", &max_velocity, max_velocity / 20.f, std::max(0.f, min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
                     }
                     ImGui::PopItemWidth();
-                    ImGui::Dummy(ImVec2(0.f, 20.f));
-                    if (ImGui::Button("Load")) {
-                        generate_scene();
-                    }
-                    ImGui::SameLine();
-                    ImGui::Button("Reset");
+                    if (ImGui::Button("Load", ImVec2(100, 0))) generate_scene();
                 }
                 ImGui::PopFont();
                 sceneGenSize = ImGui::GetWindowSize();
@@ -1066,7 +1077,7 @@ public:
 
             cmptshader.use();
             glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
-            glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), true);
+            glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 

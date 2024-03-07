@@ -206,7 +206,7 @@ void main() {
         Particle p = read(pidx);
         vec3 hit = origin + direction * mt;
         vec3 normal = normalize(hit - p.pos);
-        if (false) {
+        if (false) { // texture mapping, unused for now
             float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
             float v = acos(normal.y) / M_PI;
             p.albedo = texture2D(starTexture, vec2(u, v)).rgb;

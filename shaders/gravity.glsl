@@ -60,7 +60,7 @@ void write(in int i, in Particle p) {
 }
 
 uniform float uTimeDelta;
-uniform bool collisionType;
+uniform int collisionType; // 0: elastic, 1: inelastic, 2: none
 
 const float G = 6.67430e-11;
 const float PI = 3.14159265;
@@ -89,8 +89,8 @@ void main() {
             vec3 dir = q.pos - p.pos;
             float distSqr = dot(dir, dir);
             float minDistSqr = (p.radius + q.radius) * (p.radius + q.radius);
-            if (distSqr <= minDistSqr) {
-                if (!collisionType) { // perfectly inelastic collision, merge masses
+            if (distSqr <= minDistSqr && collisionType != 2) {
+                if (collisionType == 1) {
                     if (p.mass > q.mass) {
                         float density = p.mass / (4.f * PI * pow(p.radius, 3) / 3.f);
                         p.mass += q.mass;
@@ -110,7 +110,7 @@ void main() {
                         return;
                     }
                 }
-                else { // elastic collision, bounce
+                else {
                     vec3 relVel = q.vel - p.vel;
                     float dotProduct = dot(relVel, normalize(dir));
                     vec3 velNormal = dotProduct * normalize(dir);
@@ -118,6 +118,7 @@ void main() {
                     p.vel -= impulseScalar / p.mass * normalize(dir);
                     q.vel += impulseScalar / q.mass * normalize(dir);
                     write(i * offset, q);
+                    break;
                 }
             }
             else {
