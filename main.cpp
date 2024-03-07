@@ -795,8 +795,11 @@ public:
 
             // check if overlapping with any of the previous particles
             bool abort_flag = false;
-            for (int j = 0; j < i; j++) if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r) abort_flag = true;
-            if (abort_flag) continue;
+            for (int j = 0; j <= i; j++) if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r) abort_flag = true;
+            if (abort_flag) {
+                i -= 1;
+                continue;
+            }
 
             glm::vec3 v{};
             if (orbital_velocity) v = glm::normalize(glm::cross(p, p + glm::vec3(0.f, 1.f, 0.f))) * sqrt(6.67430e-11f * (1e+10f + m) / glm::length(p));
