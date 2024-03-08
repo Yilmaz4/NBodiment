@@ -414,7 +414,8 @@ public:
 
     float fov = 60.f;
     float sensitivity = 0.1f;
-    float speed = 0.2f;
+    float speed = 10.f;
+    glm::vec3 velocity = { 0.f, 0.f, 0.f };
     float farPlane = 1e+6f;
     float nearPlane = 0.0001f;
 
@@ -445,11 +446,17 @@ public:
             upvec.y = sin(glm::radians(pitch + 90));
             upvec.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
 
-            position += glm::vec3({
-                speed * dt * (keys[0] && !keys[2] ? 1.f : (keys[2] && !keys[0] ? -1.f : 0.f)) * direction +
-                speed * dt * (keys[4] && !keys[5] ? 1.f : (keys[5] && !keys[4] ? -1.f : 0.f)) * upvector +
-                speed * dt * (keys[1] && !keys[3] ? 1.f : (keys[3] && !keys[1] ? -1.f : 0.f)) * glm::cross(upvec, direction)
-            });
+            velocity += glm::vec3(
+                (keys[0] && !keys[2] ? speed - velocity.x : (keys[2] && !keys[0] ? -speed - velocity.x : 0.f)),
+                (keys[4] && !keys[5] ? speed - velocity.y : (keys[5] && !keys[4] ? -speed - velocity.y : 0.f)),
+                (keys[1] && !keys[3] ? speed - velocity.z : (keys[3] && !keys[1] ? -speed - velocity.z : 0.f))
+            );
+            position += glm::vec3(
+                velocity.x * dt * direction +
+                velocity.y * dt * upvector +
+                velocity.z * dt * glm::cross(upvec, direction)
+            );
+            velocity *= 0.9f;
         }
         else {
             proximity += speed * dt * (keys[0] && !keys[2] ? -1.f : (keys[2] && !keys[0] ? 1.f : 0.f));
@@ -533,9 +540,11 @@ public:
     float max_density = 10e+9f;
     float min_temperature = 0.f;
     float max_temperature = 1e+4f;
-    bool orbital_velocity = true;
     float min_velocity = 0.f;
     float max_velocity = 1.f;
+
+    bool orbital_velocity = true;
+    bool disk_only = false;
 
     float central_mass = 1e+10f;
     float central_density = 1e+9f;
@@ -785,21 +794,24 @@ public:
             .metallicity = 0.f,
             .roughness = 0.5f
         }));
+        int tries = 0;
         for (int i = 0; i < num_particles; i++) {
             float m = mass(rng);
             float d = density(rng);
             float r = cbrt((3.f * (m / d)) / (4.f * (float)(M_PI)));
 
-            glm::vec3 p = { unit_vec(rng), unit_vec(rng), unit_vec(rng) };
+            glm::vec3 p = { unit_vec(rng), !disk_only * unit_vec(rng), unit_vec(rng) };
             p = glm::normalize(p) * pos(rng);
 
             // check if overlapping with any of the previous particles
             bool abort_flag = false;
             for (int j = 0; j <= i; j++) if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r) abort_flag = true;
-            if (abort_flag) {
+            if (abort_flag && tries < 50) {
                 i -= 1;
+                tries += 1;
                 continue;
             }
+            tries = 0;
 
             glm::vec3 v{};
             if (orbital_velocity) v = glm::normalize(glm::cross(p, p + glm::vec3(0.f, 1.f, 0.f))) * sqrt(6.67430e-11f * (1e+10f + m) / glm::length(p));
@@ -963,6 +975,7 @@ public:
                         ImGui::DragFloat("Min##velocity", &min_velocity, min_velocity / 20.f, 0.f, std::min(FLT_MAX, max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
                         ImGui::DragFloat("Max##velocity", &max_velocity, max_velocity / 20.f, std::max(0.f, min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
                     }
+                    ImGui::Checkbox("No vertical component", &disk_only);
                     ImGui::PopItemWidth();
                     if (ImGui::Button("Load", ImVec2(100, 0))) generate_scene();
                 }
