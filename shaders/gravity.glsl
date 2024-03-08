@@ -87,9 +87,9 @@ void main() {
             Particle q = read(i * offset);
             if (q.mass == 0) continue;
             vec3 dir = q.pos - p.pos;
-            float distSqr = dot(dir, dir);
-            float minDistSqr = (p.radius + q.radius) * (p.radius + q.radius);
-            if (distSqr <= minDistSqr && collisionType != 2) {
+            float dist = distance(q.pos, p.pos);
+            float minDist = (p.radius + q.radius);
+            if (dist < minDist && collisionType != 2) {
                 if (collisionType == 1) {
                     if (p.mass > q.mass) {
                         float density = p.mass / (4.f * PI * pow(p.radius, 3) / 3.f);
@@ -111,6 +111,12 @@ void main() {
                     }
                 }
                 else {
+                    if (p.mass > q.mass) {
+                        q.pos = p.pos + normalize(q.pos - p.pos) * minDist;
+                    }
+                    else {
+                        p.pos = q.pos + normalize(p.pos - q.pos) * minDist;
+                    }
                     vec3 relVel = q.vel - p.vel;
                     float dotProduct = dot(relVel, normalize(dir));
                     vec3 velNormal = dotProduct * normalize(dir);
@@ -123,7 +129,7 @@ void main() {
             }
             else {
                 vec3 forceDir = normalize(dir);
-                float forceMagnitude = G * p.mass * q.mass / distSqr;
+                float forceMagnitude = G * p.mass * q.mass / (dist * dist);
                 vec3 force = forceDir * forceMagnitude;
                 totalAcc += force / p.mass;
             }

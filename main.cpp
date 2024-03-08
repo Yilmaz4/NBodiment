@@ -166,6 +166,33 @@ public:
     }
 };
 
+namespace phys {
+    constexpr glm::mat3 xyz_to_rgb( // matrix to convert from CIE 1931 XYZ color space to sRGB
+        3.2404542f, -1.5371385f, -0.4985314f,
+        -0.9692660f, 1.8760108f, 0.0415560f,
+        0.0556434f, -0.2040259f, 1.0572252f
+    );
+    constexpr float h = 6.62607015e+34; // planck's constant
+    constexpr float c = 299792458.f; // speed of light
+    constexpr float c_1 = 3.741771852e-16; // first radiation constant
+    constexpr float c_2 = 1.438776877e-02; // second radiation constant
+    constexpr float k_b = 1.380649e-23; // boltzmann constant
+    constexpr float b = 2.897771955e-3; // wien's displacement constant
+
+    float g(float x, float mu, float t_1, float t_2) {
+        return exp(-pow((x < mu) ? t_1 : t_2, 2) * pow(x - mu, 2) / 2.f);
+    }
+
+    float M(float wavelength, float t) { // black body spectral radiant exitance
+        return c_1 / (pow(wavelength, 5) * (exp(c_2 / (wavelength * t)) - 1));
+    }
+
+    glm::vec3 temperature_to_color(float t) {
+
+    }
+}
+
+
 #include "resource.h"
 
 class Shader {
@@ -446,17 +473,17 @@ public:
             upvec.y = sin(glm::radians(pitch + 90));
             upvec.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
 
-            velocity += glm::vec3(
-                (keys[0] && !keys[2] ? speed - velocity.x : (keys[2] && !keys[0] ? -speed - velocity.x : 0.f)),
-                (keys[4] && !keys[5] ? speed - velocity.y : (keys[5] && !keys[4] ? -speed - velocity.y : 0.f)),
-                (keys[1] && !keys[3] ? speed - velocity.z : (keys[3] && !keys[1] ? -speed - velocity.z : 0.f))
+            float ds = pow(0.01, dt);
+            velocity = glm::vec3(
+                (keys[0] && !keys[2] ? speed : (keys[2] && !keys[0] ? -speed : velocity.x * ds)),
+                (keys[4] && !keys[5] ? speed : (keys[5] && !keys[4] ? -speed : velocity.y * ds)),
+                (keys[1] && !keys[3] ? speed : (keys[3] && !keys[1] ? -speed : velocity.z * ds))
             );
             position += glm::vec3(
                 velocity.x * dt * direction +
                 velocity.y * dt * upvector +
                 velocity.z * dt * glm::cross(upvec, direction)
             );
-            velocity *= 0.9f;
         }
         else {
             proximity += speed * dt * (keys[0] && !keys[2] ? -1.f : (keys[2] && !keys[0] ? 1.f : 0.f));
@@ -780,12 +807,13 @@ public:
         
         pBuffer.clear();
 
+
         pBuffer.push_back(Particle({
             .pos = glm::vec3(0.f),
             .vel = glm::vec3(0.f),
             .acc = glm::vec3(0.f),
             .mass = 1e+10,
-            .temp = 3e+3,
+            .temp = central_temperature,
             .radius = cbrt((3.f * (1e+10f / 10e+9f)) / (4.f * (float)(M_PI))),
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
@@ -939,6 +967,7 @@ public:
                             glUniform1i(glGetUniformLocation(shader.id, "shadows"), shadows);
                     }
                     ImGui::SeparatorText("Camera");
+                    ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX);
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
                 }
