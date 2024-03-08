@@ -80,7 +80,7 @@
     <None Include="shaders\skyboxVertex.glsl">
       <Filter>Resources\Shaders\Skybox Shaders</Filter>
     </None>
-    <None Include="shaders\gravity.glsl">
+    <None Include="shaders\physics.glsl">
       <Filter>Resources\Shaders</Filter>
     </None>
   </ItemGroup>
