@@ -1,16 +1,20 @@
 # NBodiment
-A ray-traced gravitational N-body simulator, made in C++ and OpenGL. For my school physics project.
+A ray-traced gravitational N-body simulator with rigid body physics, made in C++ and OpenGL. For my school physics project.
 ## Controls
 **WASD** - camera movement\
 **Space/Left Shift** - camera up/down\
 **Left Ctrl** - lock/unlock mouse\
 **Mouse Scroll** - adjust camera speed\
+**Left Click** - select\
+**Double Left Click** - follow\
+**Del** - delete selected particle\
 **F11** - enter/exit fullscreen\
 **ESC** - exit
 
-![ezgif-4-3101b49f40](https://github.com/Yilmaz4/NBodiment/assets/77583632/e26f33c1-afb7-4623-8366-92d4dcd67233)
+![ezgif-2-2e8e7b4e82](https://github.com/Yilmaz4/NBodiment/assets/77583632/9c58457d-2223-48b6-9115-e530bda6b816)
 
-To-do:
-- Lighting, and luminosity based on each object's temperature
-- Collision detecion (merge and sum the masses when a collision occurs)
-- Manual placement of objects, ability to set velocity
+### To-do:
+- Physically based luminosity w/ Planckian locus
+- Radiative cooling & heating
+- Path tracing accumulation
+- FFT convolution bloom
