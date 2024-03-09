@@ -1035,7 +1035,7 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
-            if (hoveringParticle && !camera.mouseLocked && !ImGui::GetIO().WantCaptureMouse) {
+            if (hoveringParticle && !camera.mouseLocked && !ImGui::GetIO().WantCaptureMouse && glfwGetInputMode(window, GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
                 ImGui::PushFont(ImGui::font);
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);
@@ -1064,17 +1064,17 @@ public:
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            cmptshader.use();
-            glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
-            glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
-            glDispatchCompute(pBuffer.size(), 1, 1);
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-            shader.use();
             camera.projMat(res.x, res.y, shader.id);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
             glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            cmptshader.use();
+            glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep* dt);
+            glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
+            glDispatchCompute(pBuffer.size(), 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            shader.use();
 
             lastFrame = currentTime;
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
