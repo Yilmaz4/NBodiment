@@ -110,6 +110,9 @@ uniform int numRaysPerPixel;
 uniform bool globalIllumination;
 uniform bool shadows;
 
+in vec3 texCoords;
+uniform samplerCube skybox;
+
 out vec4 fragColor;
 
 float intersect(in vec3 origin, in vec3 dir, in vec3 pos, in float radius) {
@@ -177,7 +180,7 @@ void main() {
         for (int i = 1; i < numRaysPerPixel + 1; i++) {
             vec3 accLight = trace(origin, direction, i);
             if (accLight.x == -1.f) {
-                fragColor = vec4(0.f);
+                fragColor = texture(skybox, texCoords);
                 return;
             }
             totalAccLight += accLight;
@@ -200,7 +203,7 @@ void main() {
             }
         }
         if (pidx == -1) {
-            fragColor = vec4(0.f);
+            fragColor = texture(skybox, texCoords);
             return;
         }
         Particle p = read(pidx);

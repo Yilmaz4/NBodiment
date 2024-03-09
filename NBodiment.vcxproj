@@ -182,8 +182,6 @@
   <ItemGroup>
     <None Include="shaders\fragment.glsl" />
     <None Include="shaders\physics.glsl" />
-    <None Include="shaders\skyboxFragment.glsl" />
-    <None Include="shaders\skyboxVertex.glsl" />
     <None Include="shaders\vertex.glsl" />
   </ItemGroup>
   <ItemGroup>

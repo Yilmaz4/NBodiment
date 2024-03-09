@@ -74,12 +74,6 @@
     <None Include="shaders\fragment.glsl">
       <Filter>Resources\Shaders</Filter>
     </None>
-    <None Include="shaders\skyboxFragment.glsl">
-      <Filter>Resources\Shaders\Skybox Shaders</Filter>
-    </None>
-    <None Include="shaders\skyboxVertex.glsl">
-      <Filter>Resources\Shaders\Skybox Shaders</Filter>
-    </None>
     <None Include="shaders\physics.glsl">
       <Filter>Resources\Shaders</Filter>
     </None>
@@ -102,9 +96,6 @@
     </Filter>
     <Filter Include="Resources\Skybox">
       <UniqueIdentifier>{1ddc4d80-5218-49ef-9a67-b5b1a4e6f5ff}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\Shaders\Skybox Shaders">
-      <UniqueIdentifier>{996bda79-7338-4d13-bf9d-f702def032d0}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

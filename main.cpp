@@ -199,15 +199,63 @@ class Shader {
     GLuint vertexShader;
     GLuint fragmentShader;
     GLuint vao, vbo;
+    GLuint textureID;
 
-    float vertices[12] = {
-        -1.0f, -1.0f,
-         1.0f, -1.0f,
-         1.0f,  1.0f,
-        -1.0f, -1.0f,
-         1.0f,  1.0f,
-        -1.0f,  1.0f
+    float vertices[108] = {
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f
     };
+
+    static inline void load_textures() {
+        int width, height, nrChannels;
+        unsigned char* data;
+        for (int i = 0; i < 6; i++) {
+            std::string path = std::format("assets/{}.png", i);
+            data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+            if (!data) throw Error("Skybox not available");
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
+        }
+    }
 protected:
     static inline char* read_resource(int name) {
         HMODULE handle = GetModuleHandleW(NULL);
@@ -257,15 +305,30 @@ public:
         glGenBuffers(1, &vbo);
         glBindVertexArray(vao);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-        glVertexAttribPointer(0, 2, GL_FLOAT, false, 2 * sizeof(float), nullptr);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+        load_textures();
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
+
+        glUniform1i(glGetUniformLocation(id, "skybox"), 0);
     }
-    inline void use() { glUseProgram(id); }
+    inline void use() { 
+        glUseProgram(id);
+        glBindVertexArray(vao);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+    }
     inline void free() { glDeleteProgram(id); }
 };
 
@@ -290,118 +353,6 @@ public:
         glAttachShader(id, computeShader);
         glLinkProgram(id);
         glDeleteShader(computeShader);
-    }
-};
-
-class Skybox : public Shader {
-    GLuint vertexShader;
-    GLuint fragmentShader;
-    GLuint vao, vbo;
-    GLuint textureID;
-
-    float skyboxVertices[108] = {
-        -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-        -1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f
-    };
-public:
-    inline void load_textures() {
-        int width, height, nrChannels;
-        unsigned char* data;
-        for (int i = 0; i < 6; i++) {
-            std::string path = std::format("assets/{}.png", i);
-            data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
-            if (!data) throw Error("Skybox not available");
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-            stbi_image_free(data);
-        }
-    }
-
-    inline virtual void create() override {
-        glGenVertexArrays(1, &vao);
-        glGenBuffers(1, &vbo);
-        glBindVertexArray(vao);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
-
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
-        load_textures();
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-
-        char* vertexSource = this->read_resource(IDR_SKYV);
-        char* fragmentSource = this->read_resource(IDR_SKYF);
-
-        vertexShader = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vertexShader, 1, &vertexSource, NULL);
-        glCompileShader(vertexShader);
-        check_for_errors(vertexShader);
-
-        fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
-        glCompileShader(fragmentShader);
-        check_for_errors(fragmentShader);
-
-        id = glCreateProgram();
-        glAttachShader(id, vertexShader);
-        glAttachShader(id, fragmentShader);
-        glLinkProgram(id);
-
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-
-        glUniform1i(glGetUniformLocation(id, "skybox"), 0);
-    }
-
-    inline void use() {
-        glUseProgram(id);
-        glBindVertexArray(vao);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
     }
 };
 
@@ -433,7 +384,7 @@ public:
     glm::vec3 localUp;
     float proximity = 5;
     Particle* following;
-    float theta = 0.f;
+    float theta = -90.f;
     float phi = 0.f;
 
     float yaw = -90.0f;
@@ -448,14 +399,13 @@ public:
 
     bool mouseLocked = false;
 
-    void projMat(float w, float h, const GLuint shaderID, bool no_translation) {
+    void projMat(float w, float h, const GLuint shaderID) {
         shader = shaderID;
         glm::mat4 view;
-        if (following && !no_translation)
+        if (following)
             view = glm::lookAt(position, position - localCoords, { 0.f, 1.f, 0.f });
         else
             view = glm::lookAt(position, position + direction, { 0.f, 1.f, 0.f });
-        if (no_translation) view = glm::mat4(glm::mat3(view));
         auto proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
         
         glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
@@ -473,7 +423,7 @@ public:
             upvec.y = sin(glm::radians(pitch + 90));
             upvec.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch + 90));
 
-            float ds = pow(0.01, dt);
+            float ds = pow(0.0001f, dt);
             velocity = glm::vec3(
                 (keys[0] && !keys[2] ? speed : (keys[2] && !keys[0] ? -speed : velocity.x * ds)),
                 (keys[4] && !keys[5] ? speed : (keys[5] && !keys[4] ? -speed : velocity.y * ds)),
@@ -508,15 +458,10 @@ public:
         direction = glm::normalize(direction);
 
         if (following) {
-            theta -= xoffset * sensitivity;
-            phi   -= yoffset * sensitivity;
-
-            localCoords.x = cos(glm::radians(theta)) * cos(glm::radians(phi));
-            localCoords.y = sin(glm::radians(phi));
-            localCoords.z = sin(glm::radians(theta)) * cos(glm::radians(phi));
+            localCoords.x = cos(glm::radians(yaw + 180)) * cos(glm::radians(pitch));
+            localCoords.y = sin(glm::radians(pitch));
+            localCoords.z = sin(glm::radians(yaw + 180)) * cos(glm::radians(pitch));
             localCoords = glm::normalize(localCoords) * (following->radius * proximity);
-            localUp = localCoords;
-            localUp.x = cos(glm::radians(theta)) * cos(glm::radians(phi));
         }
     }
 };
@@ -525,7 +470,6 @@ class NBodiment {
 public:
     Shader shader;
     ComputeShader cmptshader;
-    Skybox skybox;
     Camera camera;
     GLuint ssbo;
     GLuint ms_ssbo;
@@ -655,8 +599,6 @@ public:
             throw Error("Failed to load GLAD");
         }
 
-        
-
         glGenBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
@@ -668,9 +610,6 @@ public:
         cmptshader.use();
         glShaderStorageBlockBinding(cmptshader.id, glGetProgramResourceIndex(cmptshader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
-
-        skybox = Skybox();
-        skybox.create();
 
         shader = Shader();
         shader.create();
@@ -688,10 +627,7 @@ public:
         load_texture("assets/8k_sun.jpg", 2, GL_TEXTURE_2D);
         load_texture("assets/temperature.jpg", 3, GL_TEXTURE_1D);
 
-        glEnable(GL_DEPTH_TEST);
         glEnable(GL_MULTISAMPLE);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glEnable(GL_BLEND);
 
         on_windowResize(window, res.x, res.y);
 
@@ -730,6 +666,16 @@ public:
                     app->res = { 600, 600 };
                     glfwSetWindowMonitor(window, nullptr, app->pos.x, app->pos.y, app->res.x, app->res.y, 0);
                 }
+                break;
+            case GLFW_KEY_DELETE:
+                if (app->lockedToParticle && app->following == app->selected) return;
+                Particle p = app->pBuffer[app->selected];
+                p.mass = 0.f;
+                p.radius = 0.f;
+                app->selectedParticle = false;
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
+                glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(app->selected * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
             }
             break;
         case GLFW_RELEASE:
@@ -768,14 +714,20 @@ public:
         switch (button) {
         case GLFW_MOUSE_BUTTON_LEFT:
             if (action == GLFW_PRESS) {
-                app->lastPresses.x = app->lastPresses.y;
-                app->lastPresses.y = glfwGetTime();
+                if (app->hovering == app->selected) {
+                    app->lastPresses.x = app->lastPresses.y;
+                    app->lastPresses.y = glfwGetTime();
+                }
                 app->selectedParticle = app->hoveringParticle;
                 app->selected = app->hovering;
+                if (app->lockedToParticle && !app->selectedParticle) {
+                    app->selected = app->following;
+                }
             }
             else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval && app->selected == app->hovering) {
                 app->lockedToParticle = true;
                 app->following = app->selected;
+                app->lastPresses.x = app->lastPresses.y - app->doubleClickInterval - 1.f;
             }
             break;
         case GLFW_MOUSE_BUTTON_RIGHT:
@@ -834,7 +786,7 @@ public:
             // check if overlapping with any of the previous particles
             bool abort_flag = false;
             for (int j = 0; j <= i; j++) if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r) abort_flag = true;
-            if (abort_flag && tries < 50) {
+            if (abort_flag && tries < 100) {
                 i -= 1;
                 tries += 1;
                 continue;
@@ -901,7 +853,7 @@ public:
                 glm::vec3 origin = camera.position - p.pos;
                 float a = glm::dot(direction, direction);
                 float b = 2.f * glm::dot(origin, direction);
-                float c = glm::dot(origin, origin) - p.radius * p.radius * 4.f;
+                float c = glm::dot(origin, origin) - p.radius * p.radius;
 
                 float d = b * b - 4.f * a * c;
                 if (d <= 0.f) continue;
@@ -1023,7 +975,7 @@ public:
                     Particle p = pBuffer[selected];
                     bool update = false;
                     float velocity = glm::length(p.vel);
-                    update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.1f);
+                    update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.02f);
                     if (update |= ImGui::DragFloat("Velocity", &velocity, (velocity / 10), FLT_MIN, FLT_MAX, "%.3g m/s", ImGuiSliderFlags_AlwaysClamp)) {
                         p.vel = glm::normalize(p.vel) * velocity;
                     }
@@ -1054,7 +1006,7 @@ public:
                         if (lockedToParticle && following == selected) {
                             lockedToParticle = false;
                             camera.direction = -camera.localCoords;
-                            camera.yaw -= 180;
+                            //camera.yaw -= 180;
                             camera.pitch -= 180;
                         }
                         selectedParticle = false;
@@ -1112,14 +1064,6 @@ public:
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            if (showMilkyway) {
-                glDepthFunc(GL_LEQUAL);
-                skybox.use();
-                camera.projMat(res.x, res.y, skybox.id, true);
-                glDrawArrays(GL_TRIANGLES, 0, 36);
-                glDepthFunc(GL_LESS);
-            }
-
             cmptshader.use();
             glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep * dt);
             glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
@@ -1127,10 +1071,10 @@ public:
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
             shader.use();
-            camera.projMat(res.x, res.y, shader.id, false);
+            camera.projMat(res.x, res.y, shader.id);
             glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
 
             lastFrame = currentTime;
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
