@@ -722,6 +722,7 @@ public:
                 app->selected = app->hovering;
                 if (app->lockedToParticle && !app->selectedParticle) {
                     app->selected = app->following;
+                    app->selectedParticle = true;
                 }
             }
             else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval && app->selected == app->hovering) {
