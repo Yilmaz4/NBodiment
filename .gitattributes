@@ -65,3 +65,4 @@
 
 imgui/** linguist-vendored
 libs/** linguist-vendored
+glad.c linguist-vendored
