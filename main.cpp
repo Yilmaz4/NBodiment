@@ -192,7 +192,6 @@ namespace phys {
     }
 }
 
-
 #include "resource.h"
 
 class Shader {
@@ -283,8 +282,8 @@ public:
     GLuint id;
 
     inline virtual void create() {
-        char* vertexSource = this->read_resource(IDR_VRTX);
-        char* fragmentSource = this->read_resource(IDR_FRAG);
+        char* vertexSource = read_resource(IDR_VRTX);
+        char* fragmentSource = read_resource(IDR_FRAG);
 
         vertexShader = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertexShader, 1, &vertexSource, NULL);
@@ -323,7 +322,7 @@ public:
 
         glUniform1i(glGetUniformLocation(id, "skybox"), 0);
     }
-    inline void use() { 
+    inline virtual void use() const { 
         glUseProgram(id);
         glBindVertexArray(vao);
         glActiveTexture(GL_TEXTURE0);
@@ -332,13 +331,226 @@ public:
     inline void free() { glDeleteProgram(id); }
 };
 
+class BloomShader : public Shader {
+    GLuint fbo;
+
+    GLuint vertexShader;
+    GLuint upsampleShader;
+    GLuint dwsampleShader;
+    GLuint displaytShader;
+
+    GLuint upsampleProgramID;
+    GLuint dwsampleProgramID;
+    GLuint displaytProgramID;
+
+    GLuint vao, vbo;
+
+    float vertices[24] = {
+        -1.0f, -1.0f,  0.0f,  0.0f,
+        -1.0f,  1.0f,  0.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  0.0f,  0.0f,
+         1.0f,  1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,  0.0f
+    };
+
+    struct bloomMip {
+        glm::vec2 size;
+        glm::ivec2 intSize;
+        unsigned int texture;
+    };
+    glm::ivec2 screenSize;
+    int mipChainLength;
+
+    std::vector<bloomMip> mMipChain;
+public:
+    inline BloomShader(int w, int h, int length) : mipChainLength(length) {
+        screenSize = { w, h };
+    }
+    inline virtual void create() override {
+        char* fullquadSource = read_resource(IDR_FULLQUAD);
+        char* upsampleSource = read_resource(IDR_UPSAMPLE);
+        char* dwsampleSource = read_resource(IDR_DWSAMPLE);
+        char* displaytSource = read_resource(IDR_DISPLAYT);
+
+        vertexShader = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertexShader, 1, &fullquadSource, NULL);
+        glCompileShader(vertexShader);
+        check_for_errors(vertexShader);
+
+        upsampleShader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(upsampleShader, 1, &upsampleSource, NULL);
+        glCompileShader(upsampleShader);
+        check_for_errors(upsampleShader);
+
+        dwsampleShader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(dwsampleShader, 1, &dwsampleSource, NULL);
+        glCompileShader(dwsampleShader);
+        check_for_errors(dwsampleShader);
+
+        displaytShader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(displaytShader, 1, &displaytSource, NULL);
+        glCompileShader(displaytShader);
+        check_for_errors(displaytShader);
+
+        upsampleProgramID = glCreateProgram();
+        glAttachShader(upsampleProgramID, vertexShader);
+        glAttachShader(upsampleProgramID, upsampleShader);
+        glLinkProgram(upsampleProgramID);
+
+        dwsampleProgramID = glCreateProgram();
+        glAttachShader(dwsampleProgramID, vertexShader);
+        glAttachShader(dwsampleProgramID, dwsampleShader);
+        glLinkProgram(dwsampleProgramID);
+
+        displaytProgramID = glCreateProgram();
+        glAttachShader(displaytProgramID, vertexShader);
+        glAttachShader(displaytProgramID, displaytShader);
+        glLinkProgram(displaytProgramID);
+
+        glDeleteShader(vertexShader);
+        glDeleteShader(upsampleShader);
+        glDeleteShader(dwsampleShader);
+
+        glUseProgram(upsampleProgramID);
+        glUniform1i(glGetUniformLocation(upsampleProgramID, "srcTexture"), 0);
+        glUseProgram(dwsampleProgramID);
+        glUniform1i(glGetUniformLocation(dwsampleProgramID, "srcTexture"), 0);
+
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
+        glEnableVertexAttribArray(0);
+
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+
+        glBindVertexArray(0);
+
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+        glm::vec2 mipSize = screenSize;
+        glm::ivec2 mipIntSize = screenSize;
+
+        for (int i = 0; i < mipChainLength; i++) {
+            bloomMip mip{};
+
+            mipSize *= 0.5f;
+            mipIntSize /= 2;
+            mip.size = mipSize;
+            mip.intSize = mipIntSize;
+
+            glGenTextures(1, &mip.texture);
+            glBindTexture(GL_TEXTURE_2D, mip.texture);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+            mMipChain.emplace_back(mip);
+        }
+        
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mMipChain[0].texture, 0);
+
+        unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
+        glDrawBuffers(1, attachments);
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            throw Error("Error generating framebuffer for bloom shader");
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    inline void render(GLuint srcTexture, float filterRadius) {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        this->renderDownsamples(srcTexture);
+        this->renderUpsamples(filterRadius);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, screenSize.x, screenSize.y);
+
+        glUseProgram(displaytProgramID);
+        glActiveTexture(GL_TEXTURE8);
+        glBindTexture(GL_TEXTURE_2D, mMipChain[0].texture);
+        glUniform1i(glGetUniformLocation(displaytProgramID, "screenTexture"), 8);
+        glUniform2i(glGetUniformLocation(displaytProgramID, "screenSize"), screenSize.x, screenSize.y);
+        glBindVertexArray(vao);
+        ImGui::Render();
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+    }
+
+    inline void renderDownsamples(GLuint srcTexture) {
+        glUseProgram(dwsampleProgramID);
+        glUniform2f(glGetUniformLocation(dwsampleProgramID, "srcResolution"), screenSize.x, screenSize.y);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, srcTexture);
+
+        for (const bloomMip& mip : mMipChain) {
+            glViewport(0, 0, mip.size.x, mip.size.y);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
+
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glBindVertexArray(0);
+
+            glUniform2fv(glGetUniformLocation(dwsampleProgramID, "srcResolution"), 2, glm::value_ptr(mip.size));
+            glBindTexture(GL_TEXTURE_2D, mip.texture);
+        }
+    }
+    inline void renderUpsamples(float filterRadius) {
+        glUseProgram(upsampleProgramID);
+        glUniform1f(glGetUniformLocation(upsampleProgramID, "filterRadius"), filterRadius);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        glBlendEquation(GL_FUNC_ADD);
+
+        for (unsigned int i = mMipChain.size() - 1; i > 0; i--) {
+            const bloomMip& mip = mMipChain[i];
+            const bloomMip& nextMip = mMipChain[i - 1];
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, mip.texture);
+
+            glViewport(0, 0, nextMip.size.x, nextMip.size.y);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextMip.texture, 0);
+
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glBindVertexArray(0);
+        }
+        glDisable(GL_BLEND);
+    }
+
+    inline void free() {
+        for (int i = 0; i < mMipChain.size(); i++) {
+            glDeleteTextures(1, &mMipChain[i].texture);
+            mMipChain[i].texture = 0;
+        }
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteProgram(upsampleProgramID);
+        glDeleteProgram(dwsampleProgramID);
+    }
+};
+
 class ComputeShader : public Shader {
     GLuint computeShader;
 public:
     inline virtual void create() override {
         int success;
         char infoLog[1024];
-        char* computeSource = this->read_resource(IDR_CMPT);
+        char* computeSource = read_resource(IDR_CMPT);
 
         computeShader = glCreateShader(GL_COMPUTE_SHADER);
         glShaderSource(computeShader, 1, &computeSource, NULL);
@@ -354,9 +566,11 @@ public:
         glLinkProgram(id);
         glDeleteShader(computeShader);
     }
-};
 
-class NBodiment;
+    inline virtual void use() const override {
+        glUseProgram(id);
+    }
+};
 
 struct Particle {
     glm::vec3 pos;
@@ -468,11 +682,13 @@ public:
 
 class NBodiment {
 public:
-    Shader shader;
-    ComputeShader cmptshader;
+    Shader* shader;
+    ComputeShader* cmptshader;
+    BloomShader* bloomshader;
     Camera camera;
     GLuint ssbo;
-    GLuint ms_ssbo;
+    GLuint fbo;
+    GLuint screenTexture;
 
     GLFWwindow* window;
     GLFWmonitor* monitor;
@@ -489,7 +705,6 @@ public:
     float timeStep = 1.0f;
     int collisionType = 0;
 
-    bool showMilkyway = true;
     int hovering;
     int selected;
     int following;
@@ -500,13 +715,14 @@ public:
     int numRaysPerPixel = 10;
     bool globalIllumination = false;
     bool shadows = true;
+    float bloomRadius = 0.005f;
 
     int num_particles = 100;
 
-    float min_distance = 4.f;
+    float min_distance = 5.f;
     float max_distance = 5.f;
     float min_mass = 1e+6f;
-    float max_mass = 1e+8f;
+    float max_mass = 1e+7f;
     float min_density = 10e+8f;
     float max_density = 10e+9f;
     float min_temperature = 0.f;
@@ -518,8 +734,9 @@ public:
     bool disk_only = false;
 
     float central_mass = 1e+10f;
-    float central_density = 1e+9f;
+    float central_density = 1e+10f;
     float central_temperature = 3e+3;
+    float central_luminosity = 40.f;
 
     glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
 
@@ -570,11 +787,6 @@ public:
         }
         glfwMakeContextCurrent(window);
         // initialize callback functions
-        glfwSetFramebufferSizeCallback(window, on_windowResize);
-        glfwSetMouseButtonCallback(window, on_mousePress);
-        glfwSetKeyCallback(window, on_keyPress);
-        glfwSetScrollCallback(window, on_mouseScroll);
-        glfwSetCursorPosCallback(window, on_mouseMove);
 
         glfwSwapInterval(1);
 
@@ -603,24 +815,26 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
 
+        cmptshader = new ComputeShader();
+        cmptshader->create();
+        cmptshader->use();
+        glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
+        glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
+
+        bloomshader = new BloomShader(res.x, res.y, 6);
+        bloomshader->create();
+
+        shader = new Shader();
+        shader->create();
         generate_scene();
-
-        cmptshader = ComputeShader();
-        cmptshader.create();
-        cmptshader.use();
-        glShaderStorageBlockBinding(cmptshader.id, glGetProgramResourceIndex(cmptshader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
-        glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
-
-        shader = Shader();
-        shader.create();
-        shader.use();
-        glShaderStorageBlockBinding(shader.id, glGetProgramResourceIndex(shader.id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
-        glUniform3f(glGetUniformLocation(shader.id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
-        glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
-        glUniform1i(glGetUniformLocation(shader.id, "numParticles"), pBuffer.size());
-        glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
-        glUniform1i(glGetUniformLocation(shader.id, "globalIllumination"), globalIllumination);
-        glUniform1i(glGetUniformLocation(shader.id, "shadows"), shadows);
+        shader->use();
+        glShaderStorageBlockBinding(shader->id, glGetProgramResourceIndex(shader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
+        glUniform3f(glGetUniformLocation(shader->id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
+        glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
+        glUniform1i(glGetUniformLocation(shader->id, "numParticles"), pBuffer.size());
+        glUniform1i(glGetUniformLocation(shader->id, "numRaysPerPixel"), numRaysPerPixel);
+        glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
+        glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
 
         load_texture("assets/8k_earth_daymap.jpg", 0, GL_TEXTURE_2D);
         load_texture("assets/8k_earth_clouds.jpg", 1, GL_TEXTURE_2D);
@@ -628,6 +842,25 @@ public:
         load_texture("assets/temperature.jpg", 3, GL_TEXTURE_1D);
 
         glEnable(GL_MULTISAMPLE);
+
+        glGenTextures(1, &screenTexture);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, screenTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, screenTexture, 0);
+
+        glfwSetFramebufferSizeCallback(window, on_windowResize);
+        glfwSetMouseButtonCallback(window, on_mousePress);
+        glfwSetKeyCallback(window, on_keyPress);
+        glfwSetScrollCallback(window, on_mouseScroll);
+        glfwSetCursorPosCallback(window, on_mouseMove);
 
         on_windowResize(window, res.x, res.y);
 
@@ -638,7 +871,7 @@ public:
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
         app->res = { w, h };
         glViewport(0, 0, app->res.x, app->res.y);
-        glUniform2f(glGetUniformLocation(app->shader.id, "screenSize"), w, h);
+        glUniform2f(glGetUniformLocation(app->shader->id, "screenSize"), w, h);
     }
 
     static inline void on_keyPress(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -765,15 +998,15 @@ public:
             .pos = glm::vec3(0.f),
             .vel = glm::vec3(0.f),
             .acc = glm::vec3(0.f),
-            .mass = 1e+10,
+            .mass = central_mass,
             .temp = central_temperature,
-            .radius = cbrt((3.f * (1e+10f / 10e+9f)) / (4.f * (float)(M_PI))),
+            .radius = cbrt((3.f * (central_mass / central_density)) / (4.f * (float)(M_PI))),
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
             .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .emissionStrength = 50.f,
+            .emissionStrength = central_luminosity,
             .metallicity = 0.f,
-            .roughness = 0.5f
+            .roughness = 0.f
         }));
         int tries = 0;
         for (int i = 0; i < num_particles; i++) {
@@ -795,7 +1028,7 @@ public:
             tries = 0;
 
             glm::vec3 v{};
-            if (orbital_velocity) v = glm::normalize(glm::cross(p, p + glm::vec3(0.f, 1.f, 0.f))) * sqrt(6.67430e-11f * (1e+10f + m) / glm::length(p));
+            if (orbital_velocity) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (central_mass + m) / glm::length(p));
             else v = glm::normalize(glm::vec3(unit_vec(rng), unit_vec(rng), unit_vec(rng))) * vel(rng);
 
             glm::vec3 c = { col(rng), col(rng), col(rng) };
@@ -819,7 +1052,7 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(pBuffer.data()), GL_DYNAMIC_DRAW);
-        glUniform1i(glGetUniformLocation(shader.id, "numParticles"), pBuffer.size());
+        glUniform1i(glGetUniformLocation(shader->id, "numParticles"), pBuffer.size());
     }
 
     void mainloop() {
@@ -903,21 +1136,19 @@ public:
                     }
 
                     ImGui::SeparatorText("Environment");
-                    ImGui::Checkbox("Milky way background", &showMilkyway);
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
-                        glUniform3f(glGetUniformLocation(shader.id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
+                        glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
                     ImGui::SeparatorText("Graphics");
                     if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
-                        glUniform1i(glGetUniformLocation(shader.id, "globalIllumination"), globalIllumination);
+                        glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
                     }
                     if (globalIllumination) {
                         if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
-                            glUniform1i(glGetUniformLocation(shader.id, "numRaysPerPixel"), numRaysPerPixel);
+                            glUniform1i(glGetUniformLocation(shader->id, "numRaysPerPixel"), numRaysPerPixel);
                     }
-                    ImGui::Separator();
-                    if (!globalIllumination) {
+                    else {
                         if (ImGui::ToggleButton("Shadows", &shadows))
-                            glUniform1i(glGetUniformLocation(shader.id, "shadows"), shadows);
+                            glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
                     }
                     ImGui::SeparatorText("Camera");
                     ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX);
@@ -1061,21 +1292,25 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
-            ImGui::Render();
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glClearColor(0.f, 0.f, 0.f, 1.f);
+            glClear(GL_COLOR_BUFFER_BIT); 
 
-            camera.projMat(res.x, res.y, shader.id);
-            glUniform1f(glGetUniformLocation(shader.id, "uTimeDelta"), timeStep * dt);
-            glUniform1f(glGetUniformLocation(shader.id, "uTime"), currentTime);
+            shader->use();
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            camera.projMat(res.x, res.y, shader->id);
+            glUniform1f(glGetUniformLocation(shader->id, "uTimeDelta"), timeStep * dt);
+            glUniform1f(glGetUniformLocation(shader->id, "uTime"), currentTime);
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
-            cmptshader.use();
-            glUniform1f(glGetUniformLocation(cmptshader.id, "uTimeDelta"), timeStep* dt);
-            glUniform1i(glGetUniformLocation(cmptshader.id, "collisionType"), collisionType);
+            bloomshader->use();
+            bloomshader->render(screenTexture, 0.005);
+
+            cmptshader->use();
+            glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep* dt);
+            glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-            shader.use();
+            shader->use();
 
             lastFrame = currentTime;
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

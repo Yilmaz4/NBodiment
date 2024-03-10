@@ -180,6 +180,10 @@
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\bloom\display.glsl" />
+    <None Include="shaders\bloom\downsample.glsl" />
+    <None Include="shaders\bloom\fullquad.glsl" />
+    <None Include="shaders\bloom\upsample.glsl" />
     <None Include="shaders\fragment.glsl" />
     <None Include="shaders\physics.glsl" />
     <None Include="shaders\vertex.glsl" />

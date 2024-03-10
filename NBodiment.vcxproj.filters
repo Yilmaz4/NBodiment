@@ -77,6 +77,18 @@
     <None Include="shaders\physics.glsl">
       <Filter>Resources\Shaders</Filter>
     </None>
+    <None Include="shaders\bloom\upsample.glsl">
+      <Filter>Resources\Shaders\Bloom</Filter>
+    </None>
+    <None Include="shaders\bloom\downsample.glsl">
+      <Filter>Resources\Shaders\Bloom</Filter>
+    </None>
+    <None Include="shaders\bloom\fullquad.glsl">
+      <Filter>Resources\Shaders\Bloom</Filter>
+    </None>
+    <None Include="shaders\bloom\display.glsl">
+      <Filter>Resources\Shaders\Bloom</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Headers">
@@ -96,6 +108,9 @@
     </Filter>
     <Filter Include="Resources\Skybox">
       <UniqueIdentifier>{1ddc4d80-5218-49ef-9a67-b5b1a4e6f5ff}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources\Shaders\Bloom">
+      <UniqueIdentifier>{6db1ff89-3b1a-4ee5-9896-bd37015022f9}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
