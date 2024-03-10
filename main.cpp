@@ -441,8 +441,6 @@ public:
         for (int i = 0; i < mipChainLength; i++) {
             bloomMip mip{};
 
-            mipSize *= 0.5f;
-            mipIntSize /= 2;
             mip.size = mipSize;
             mip.intSize = mipIntSize;
 
@@ -454,6 +452,9 @@ public:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+            mipSize *= 0.5f;
+            mipIntSize /= 2;
 
             mMipChain.emplace_back(mip);
         }
@@ -484,7 +485,6 @@ public:
         glUniform1i(glGetUniformLocation(displaytProgramID, "screenTexture"), 8);
         glUniform2i(glGetUniformLocation(displaytProgramID, "screenSize"), screenSize.x, screenSize.y);
         glBindVertexArray(vao);
-        ImGui::Render();
         glDrawArrays(GL_TRIANGLES, 0, 6);
         glBindVertexArray(0);
     }
@@ -715,7 +715,7 @@ public:
     int numRaysPerPixel = 10;
     bool globalIllumination = false;
     bool shadows = true;
-    float bloomRadius = 0.005f;
+    float bloomStrength = 0.005f;
 
     int num_particles = 100;
 
@@ -786,7 +786,6 @@ public:
             throw Error("Failed to create OpenGL context");
         }
         glfwMakeContextCurrent(window);
-        // initialize callback functions
 
         glfwSwapInterval(1);
 
@@ -794,18 +793,6 @@ public:
 
         if (glfwRawMouseMotionSupported()) glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         glfwGetCursorPos(window, &prevMousePos.x, &prevMousePos.y);
-
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO(); (void)io;
-        io.Fonts->AddFontDefault();
-        ImGui::font = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 11.f);
-        IM_ASSERT(ImGui::font != NULL);
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        ImGui::load_theme();
-        ImGui_ImplGlfw_InitForOpenGL(window, true);
-        ImGui_ImplOpenGL3_Init("#version 430");
 
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
             throw Error("Failed to load GLAD");
@@ -863,6 +850,18 @@ public:
         glfwSetCursorPosCallback(window, on_mouseMove);
 
         on_windowResize(window, res.x, res.y);
+
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO(); (void)io;
+        io.Fonts->AddFontDefault();
+        ImGui::font = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 11.f);
+        IM_ASSERT(ImGui::font != NULL);
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        ImGui::load_theme();
+        ImGui_ImplGlfw_InitForOpenGL(window, true);
+        ImGui_ImplOpenGL3_Init("#version 430");
 
         camera = Camera();
     }
@@ -1150,6 +1149,7 @@ public:
                         if (ImGui::ToggleButton("Shadows", &shadows))
                             glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
                     }
+                    ImGui::DragFloat("Bloom strength", &bloomStrength, 0.0001f, 0.f, 0.01f, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                     ImGui::SeparatorText("Camera");
                     ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX);
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
@@ -1293,7 +1293,9 @@ public:
                 ImGui::End();
             }
             glClearColor(0.f, 0.f, 0.f, 1.f);
-            glClear(GL_COLOR_BUFFER_BIT); 
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            ImGui::Render();
 
             shader->use();
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -1303,7 +1305,7 @@ public:
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
             bloomshader->use();
-            bloomshader->render(screenTexture, 0.005);
+            bloomshader->render(screenTexture, bloomStrength);
 
             cmptshader->use();
             glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep* dt);
