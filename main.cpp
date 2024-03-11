@@ -57,7 +57,7 @@ namespace ImGui {
         ImVec2 center = ImVec2(radius + (*v ? 1 : 0) * (width - radius * 2.0f), radius);
         draw_list->AddRectFilled(ImVec2((p.x + center.x) - 9.0f, p.y + 1.5f),
             ImVec2((p.x + (width / 2) + center.x) - 9.0f, p.y + height - 1.5f), IM_COL32(255, 255, 255, 255), height * rounding);
-        ImGui::SameLine(42.f);
+        ImGui::SameLine(p.x + 22.f);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.f);
         ImGui::Text(name);
         return false;
@@ -436,31 +436,34 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
         glm::vec2 mipSize = screenSize;
-        glm::ivec2 mipIntSize = screenSize;
+        glm::ivec2 mipIntSize = static_cast<glm::ivec2>(screenSize);
 
-        for (int i = 0; i < mipChainLength; i++) {
-            bloomMip mip{};
+        for (unsigned int i = 0; i < mipChainLength; i++) {
+            bloomMip mip;
 
+            mipSize *= 0.5f;
+            mipIntSize /= 2;
             mip.size = mipSize;
             mip.intSize = mipIntSize;
 
             glGenTextures(1, &mip.texture);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
-
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGBA, GL_FLOAT, nullptr);
+            // we are downscaling an HDR color buffer, so we need a float texture format
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F,
+                (int)mipSize.x, (int)mipSize.y,
+                0, GL_RGB, GL_FLOAT, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-            mipSize *= 0.5f;
-            mipIntSize /= 2;
-
             mMipChain.emplace_back(mip);
         }
-        
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mMipChain[0].texture, 0);
 
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+            GL_TEXTURE_2D, mMipChain[0].texture, 0);
+
+        // setup attachments
         unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
         glDrawBuffers(1, attachments);
 
@@ -471,66 +474,92 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    inline void render(GLuint srcTexture, float filterRadius) {
+    inline void render(GLuint srcTexture, float threshold) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        this->renderDownsamples(srcTexture);
-        this->renderUpsamples(filterRadius);
+        this->renderDownsamples(srcTexture, threshold);
+        this->renderUpsamples();
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, screenSize.x, screenSize.y);
 
         glUseProgram(displaytProgramID);
-        glActiveTexture(GL_TEXTURE8);
-        glBindTexture(GL_TEXTURE_2D, mMipChain[0].texture);
-        glUniform1i(glGetUniformLocation(displaytProgramID, "screenTexture"), 8);
+        glUniform1i(glGetUniformLocation(displaytProgramID, "screenTexture"), 0);
         glUniform2i(glGetUniformLocation(displaytProgramID, "screenSize"), screenSize.x, screenSize.y);
         glBindVertexArray(vao);
+        glActiveTexture(GL_TEXTURE0);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+        glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 1.0);
+        glBindTexture(GL_TEXTURE_2D, srcTexture);
         glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 0.0);
+        glBindTexture(GL_TEXTURE_2D, mMipChain[0].texture);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        glDisable(GL_BLEND);
+
         glBindVertexArray(0);
     }
 
-    inline void renderDownsamples(GLuint srcTexture) {
+    inline void renderDownsamples(GLuint srcTexture, float threshold) {
         glUseProgram(dwsampleProgramID);
         glUniform2f(glGetUniformLocation(dwsampleProgramID, "srcResolution"), screenSize.x, screenSize.y);
+        glUniform1f(glGetUniformLocation(dwsampleProgramID, "threshold"), threshold);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, srcTexture);
 
-        for (const bloomMip& mip : mMipChain) {
+        for (int i = 0; i < mMipChain.size(); i++) {
+            const bloomMip& mip = mMipChain[i];
             glViewport(0, 0, mip.size.x, mip.size.y);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
+            glUniform1i(glGetUniformLocation(dwsampleProgramID, "depth"), i);
 
+            // Render screen-filled quad of resolution of current mip
             glBindVertexArray(vao);
             glDrawArrays(GL_TRIANGLES, 0, 6);
             glBindVertexArray(0);
 
-            glUniform2fv(glGetUniformLocation(dwsampleProgramID, "srcResolution"), 2, glm::value_ptr(mip.size));
+            // Set current mip resolution as srcResolution for next iteration
+            glUniform2f(glGetUniformLocation(dwsampleProgramID, "srcResolution"), mip.size.x, mip.size.y);
+            // Set current mip as texture input for next iteration
             glBindTexture(GL_TEXTURE_2D, mip.texture);
         }
+        glUseProgram(0);
     }
-    inline void renderUpsamples(float filterRadius) {
+    inline void renderUpsamples() {
         glUseProgram(upsampleProgramID);
-        glUniform1f(glGetUniformLocation(upsampleProgramID, "filterRadius"), filterRadius);
+        glUniform1f(glGetUniformLocation(upsampleProgramID, "filterRadius"), 0.005);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);
         glBlendEquation(GL_FUNC_ADD);
 
-        for (unsigned int i = mMipChain.size() - 1; i > 0; i--) {
+        glBindVertexArray(vao);
+
+        for (int i = mMipChain.size() - 1; i > 0; i--) {
             const bloomMip& mip = mMipChain[i];
             const bloomMip& nextMip = mMipChain[i - 1];
 
+            // Bind viewport and texture from where to read
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
 
+            // Set framebuffer render target (we write to this texture)
             glViewport(0, 0, nextMip.size.x, nextMip.size.y);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextMip.texture, 0);
+            glUniform1i(glGetUniformLocation(upsampleProgramID, "depth"), i);
 
-            glBindVertexArray(vao);
+            // Render screen-filled quad of resolution of current mip
             glDrawArrays(GL_TRIANGLES, 0, 6);
-            glBindVertexArray(0);
         }
+
+        glBindVertexArray(0);
         glDisable(GL_BLEND);
+        glUseProgram(0);
     }
 
     inline void free() {
@@ -715,7 +744,8 @@ public:
     int numRaysPerPixel = 10;
     bool globalIllumination = false;
     bool shadows = true;
-    float bloomStrength = 0.005f;
+    bool bloom = true;
+    float bloomThreshold = 2.0f;
 
     int num_particles = 100;
 
@@ -808,7 +838,7 @@ public:
         glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
 
-        bloomshader = new BloomShader(res.x, res.y, 6);
+        bloomshader = new BloomShader(res.x, res.y, 5);
         bloomshader->create();
 
         shader = new Shader();
@@ -833,7 +863,7 @@ public:
         glGenTextures(1, &screenTexture);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, screenTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1148,8 +1178,11 @@ public:
                     else {
                         if (ImGui::ToggleButton("Shadows", &shadows))
                             glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
+                        ImGui::SameLine();
                     }
-                    ImGui::DragFloat("Bloom strength", &bloomStrength, 0.0001f, 0.f, 0.01f, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
+                    ImGui::ToggleButton("Bloom", &bloom);
+                    if (bloom)
+                        ImGui::DragFloat("Bloom threshold", &bloomThreshold, bloomThreshold / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                     ImGui::SeparatorText("Camera");
                     ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX);
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
@@ -1180,8 +1213,8 @@ public:
                     ImGui::DragFloat("Min##density", &min_density, min_density / 20.f, FLT_MIN, std::min(FLT_MAX, max_density), "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
                     ImGui::DragFloat("Max##density", &max_density, max_density / 20.f, std::max(FLT_MIN, min_density), FLT_MAX, "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SeparatorText("Temperature");
-                    ImGui::DragFloat("Min##temperature", &min_temperature, min_temperature / 20.f, 0.f, std::min(FLT_MAX, max_temperature), "%.9g K", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##temperature", &max_temperature, max_temperature / 20.f, std::max(0.f, min_temperature), FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::DragFloat("Min##temperature", &min_temperature, min_temperature / 20.f, FLT_MIN, std::min(FLT_MAX, max_temperature), "%.9g K", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+                    ImGui::DragFloat("Max##temperature", &max_temperature, max_temperature / 20.f, std::max(FLT_MIN, min_temperature), FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SeparatorText("Velocity");
                     ImGui::Checkbox("Automatic Orbital Velocity", &orbital_velocity);
                     if (!orbital_velocity) {
@@ -1305,7 +1338,7 @@ public:
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
             bloomshader->use();
-            bloomshader->render(screenTexture, bloomStrength);
+            bloomshader->render(screenTexture, bloomThreshold);
 
             cmptshader->use();
             glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep* dt);
