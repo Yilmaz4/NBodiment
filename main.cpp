@@ -474,10 +474,10 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    inline void render(GLuint srcTexture, float threshold) {
+    inline void render(GLuint srcTexture, float threshold, float radius, float exposure) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         this->renderDownsamples(srcTexture, threshold);
-        this->renderUpsamples();
+        this->renderUpsamples(radius, exposure);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, screenSize.x, screenSize.y);
@@ -491,11 +491,11 @@ public:
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-        glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 1.0);
+        glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 0.0);
         glBindTexture(GL_TEXTURE_2D, srcTexture);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
-        glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 0.0);
+        glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 1.0);
         glBindTexture(GL_TEXTURE_2D, mMipChain[0].texture);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
@@ -512,31 +512,29 @@ public:
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, srcTexture);
 
+        glBindVertexArray(vao);
+
         for (int i = 0; i < mMipChain.size(); i++) {
             const bloomMip& mip = mMipChain[i];
             glViewport(0, 0, mip.size.x, mip.size.y);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
             glUniform1i(glGetUniformLocation(dwsampleProgramID, "depth"), i);
 
-            // Render screen-filled quad of resolution of current mip
-            glBindVertexArray(vao);
             glDrawArrays(GL_TRIANGLES, 0, 6);
-            glBindVertexArray(0);
 
-            // Set current mip resolution as srcResolution for next iteration
             glUniform2f(glGetUniformLocation(dwsampleProgramID, "srcResolution"), mip.size.x, mip.size.y);
-            // Set current mip as texture input for next iteration
             glBindTexture(GL_TEXTURE_2D, mip.texture);
         }
+        glBindVertexArray(0);
         glUseProgram(0);
     }
-    inline void renderUpsamples() {
+    inline void renderUpsamples(float radius, float exposure) {
         glUseProgram(upsampleProgramID);
-        glUniform1f(glGetUniformLocation(upsampleProgramID, "filterRadius"), 0.005);
+        glUniform1f(glGetUniformLocation(upsampleProgramID, "filterRadius"), radius);
+        glUniform1f(glGetUniformLocation(upsampleProgramID, "exposure"), exposure);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);
-        glBlendEquation(GL_FUNC_ADD);
 
         glBindVertexArray(vao);
 
@@ -544,16 +542,13 @@ public:
             const bloomMip& mip = mMipChain[i];
             const bloomMip& nextMip = mMipChain[i - 1];
 
-            // Bind viewport and texture from where to read
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
 
-            // Set framebuffer render target (we write to this texture)
             glViewport(0, 0, nextMip.size.x, nextMip.size.y);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextMip.texture, 0);
             glUniform1i(glGetUniformLocation(upsampleProgramID, "depth"), i);
 
-            // Render screen-filled quad of resolution of current mip
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
@@ -745,7 +740,9 @@ public:
     bool globalIllumination = false;
     bool shadows = true;
     bool bloom = true;
-    float bloomThreshold = 2.0f;
+    float bloomThreshold = 1.0f;
+    float bloomRadius = 0.005f;
+    float exposure = 0.01f;
 
     int num_particles = 100;
 
@@ -838,7 +835,7 @@ public:
         glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
 
-        bloomshader = new BloomShader(res.x, res.y, 5);
+        bloomshader = new BloomShader(res.x, res.y, 8);
         bloomshader->create();
 
         shader = new Shader();
@@ -1181,8 +1178,11 @@ public:
                         ImGui::SameLine();
                     }
                     ImGui::ToggleButton("Bloom", &bloom);
-                    if (bloom)
+                    if (bloom) {
                         ImGui::DragFloat("Bloom threshold", &bloomThreshold, bloomThreshold / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
+                        ImGui::DragFloat("Bloom radius", &bloomRadius, bloomRadius / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
+                    }
+                    ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
                     ImGui::SeparatorText("Camera");
                     ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX);
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
@@ -1331,14 +1331,16 @@ public:
             ImGui::Render();
 
             shader->use();
-            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, bloom ? fbo : 0);
             camera.projMat(res.x, res.y, shader->id);
             glUniform1f(glGetUniformLocation(shader->id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader->id, "uTime"), currentTime);
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
-            bloomshader->use();
-            bloomshader->render(screenTexture, bloomThreshold);
+            if (bloom) {
+                bloomshader->use();
+                bloomshader->render(screenTexture, bloomThreshold, bloomRadius, exposure);
+            }
 
             cmptshader->use();
             glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep* dt);

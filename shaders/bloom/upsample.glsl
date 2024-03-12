@@ -4,12 +4,14 @@ uniform sampler2D srcTexture;
 uniform float filterRadius;
 uniform int depth;
 
+uniform float exposure;
+
 in vec2 texCoord;
-out vec4 fragColor;
+out vec3 fragColor;
 
 void main() {
-    float x = filterRadius;
-    float y = filterRadius;
+    float x = 0;
+    float y = 0;
 
     vec3 a = texture(srcTexture, vec2(texCoord.x - x, texCoord.y + y)).rgb;
     vec3 b = texture(srcTexture, vec2(texCoord.x, texCoord.y + y)).rgb;
@@ -27,5 +29,13 @@ void main() {
     p += (b + d + f + h) * 2.0;
     p += (a + c + g + i);
     p *= 1.0 / 16.0;
-    fragColor = vec4(p, depth / 4);
+
+    if (depth == 2) {
+        p = vec3(1.0) - exp(-p * exposure);
+        const float gamma = 2.2;
+        fragColor = pow(p, vec3(1.0 / gamma));
+    }
+    else {
+        fragColor = p;
+    }
 }

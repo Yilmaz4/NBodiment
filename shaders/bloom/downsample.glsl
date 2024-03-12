@@ -6,7 +6,7 @@ uniform int depth;
 uniform float threshold;
 
 in vec2 texCoord;
-layout(location = 0) out vec4 fragColor;
+layout(location = 0) out vec3 fragColor;
 
 void main()
 {
@@ -41,5 +41,5 @@ void main()
     p += (data[0] + data[2] + data[6] + data[8]) * 0.03125;
     p += (data[1] + data[3] + data[5] + data[7]) * 0.0625;
     p += (data[9] + data[10] + data[11] + data[12]) * 0.125;
-    fragColor = vec4(p, 0.2);
+    fragColor = p;
 }
