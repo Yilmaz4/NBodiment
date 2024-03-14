@@ -74,8 +74,34 @@ float atan2(in float y, in float x) {
     return mix(M_PI / 2.0 - atan(x, y), atan(y, x), s);
 }
 
+layout(binding = 0) uniform sampler2D previousFrame;
+uniform int accumulationFrameIndex;
+
+in vec3 texCoords;
+layout(binding = 1) uniform samplerCube skybox;
+
+layout(binding = 2) uniform sampler2D earthDaymap;
+layout(binding = 3) uniform sampler2D earthClouds;
+layout(binding = 4) uniform sampler2D starTexture;
+layout(binding = 5) uniform sampler1D starColor;
+
+uniform vec2 screenSize;
+uniform float uTime;
+uniform float uTimeDelta;
+uniform mat4 projMatrix;
+uniform mat4 viewMatrix;
+uniform mat4 invProjMatrix;
+uniform mat4 invViewMatrix;
+uniform vec3 cameraPos;
+uniform vec3 ambientLight;
+uniform int spp;
+uniform bool globalIllumination;
+uniform bool shadows;
+
+out vec4 fragColor;
+
 float random(inout uint state) {
-    state = state * 747796405 + 2891336453;
+    state = state * 747796405 + 2891336453 + accumulationFrameIndex * 10000;
     uint result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
     result = (result >> 22) ^ result;
     return result / 4294967295.0;
@@ -91,29 +117,6 @@ vec3 randomDirection(inout uint seed, in vec3 normal) {
     vec3 dir = normalize(vec3(randomND(seed), randomND(seed), randomND(seed)));
     return normalize(dir);
 }
-
-layout(binding = 0) uniform sampler2D earthDaymap;
-layout(binding = 1) uniform sampler2D earthClouds;
-layout(binding = 2) uniform sampler2D starTexture;
-layout(binding = 3) uniform sampler1D starColor;
-
-uniform vec2 screenSize;
-uniform float uTime;
-uniform float uTimeDelta;
-uniform mat4 projMatrix;
-uniform mat4 viewMatrix;
-uniform mat4 invProjMatrix;
-uniform mat4 invViewMatrix;
-uniform vec3 cameraPos;
-uniform vec3 ambientLight;
-uniform int numRaysPerPixel;
-uniform bool globalIllumination;
-uniform bool shadows;
-
-in vec3 texCoords;
-uniform samplerCube skybox;
-
-out vec4 fragColor;
 
 float intersect(in vec3 origin, in vec3 dir, in vec3 pos, in float radius) {
     vec3 org = origin - pos;
@@ -177,7 +180,7 @@ void main() {
 
     if (globalIllumination) {
         vec3 totalAccLight = vec3(0.f);
-        for (int i = 1; i < numRaysPerPixel + 1; i++) {
+        for (int i = 1; i < spp + 1; i++) {
             vec3 accLight = trace(origin, direction, i);
             if (accLight.x == -1.f) {
                 fragColor = texture(skybox, texCoords);
@@ -185,7 +188,14 @@ void main() {
             }
             totalAccLight += accLight;
         }
-        fragColor = vec4(totalAccLight / numRaysPerPixel, 1.f);
+        if (accumulationFrameIndex == 0) {
+            fragColor = vec4(totalAccLight / float(spp), 1.f);
+        }
+        else {
+            totalAccLight /= float(spp);
+            vec3 pixel = texture(previousFrame, gl_FragCoord.xy / screenSize).rgb;
+            fragColor = vec4((pixel * accumulationFrameIndex + totalAccLight) / (accumulationFrameIndex + 1), 1.f);
+        }
     }
     else {
         float mt = 1.f / 0.f;

@@ -308,6 +308,7 @@ public:
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
 
+        glActiveTexture(GL_TEXTURE1);
         glGenTextures(1, &textureID);
         glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
         load_textures();
@@ -441,8 +442,6 @@ public:
         for (unsigned int i = 0; i < mipChainLength; i++) {
             bloomMip mip;
 
-            mipSize *= 0.5f;
-            mipIntSize /= 2;
             mip.size = mipSize;
             mip.intSize = mipIntSize;
 
@@ -456,6 +455,9 @@ public:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+            mipSize *= 0.5f;
+            mipIntSize /= 2;
 
             mMipChain.emplace_back(mip);
         }
@@ -474,7 +476,7 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    inline void render(GLuint srcTexture, float threshold, float radius, float exposure) {
+    inline void render(bool bloom, GLuint srcTexture, float threshold, float radius, float exposure) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         this->renderDownsamples(srcTexture, threshold);
         this->renderUpsamples(radius, exposure);
@@ -495,9 +497,11 @@ public:
         glBindTexture(GL_TEXTURE_2D, srcTexture);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
-        glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 1.0);
-        glBindTexture(GL_TEXTURE_2D, mMipChain[0].texture);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        if (bloom) {
+            glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 1.0);
+            glBindTexture(GL_TEXTURE_2D, mMipChain[0].texture);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
 
         glDisable(GL_BLEND);
 
@@ -740,9 +744,10 @@ public:
     bool globalIllumination = false;
     bool shadows = true;
     bool bloom = true;
-    float bloomThreshold = 1.0f;
+    float bloomThreshold = 2.0f;
     float bloomRadius = 0.005f;
-    float exposure = 0.01f;
+    float exposure = 0.05f;
+    int accumulationFrameIndex = 0;
 
     int num_particles = 100;
 
@@ -846,14 +851,14 @@ public:
         glUniform3f(glGetUniformLocation(shader->id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
         glUniform1i(glGetUniformLocation(shader->id, "numParticles"), pBuffer.size());
-        glUniform1i(glGetUniformLocation(shader->id, "numRaysPerPixel"), numRaysPerPixel);
+        glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
         glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
 
-        load_texture("assets/8k_earth_daymap.jpg", 0, GL_TEXTURE_2D);
-        load_texture("assets/8k_earth_clouds.jpg", 1, GL_TEXTURE_2D);
-        load_texture("assets/8k_sun.jpg", 2, GL_TEXTURE_2D);
-        load_texture("assets/temperature.jpg", 3, GL_TEXTURE_1D);
+        load_texture("assets/8k_earth_daymap.jpg", 2, GL_TEXTURE_2D);
+        load_texture("assets/8k_earth_clouds.jpg", 3, GL_TEXTURE_2D);
+        load_texture("assets/8k_sun.jpg", 4, GL_TEXTURE_2D);
+        load_texture("assets/temperature.jpg", 5, GL_TEXTURE_1D);
 
         glEnable(GL_MULTISAMPLE);
 
@@ -898,6 +903,11 @@ public:
         app->res = { w, h };
         glViewport(0, 0, app->res.x, app->res.y);
         glUniform2f(glGetUniformLocation(app->shader->id, "screenSize"), w, h);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, app->screenTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, app->res.x, app->res.y, 0, GL_RGBA, GL_FLOAT, NULL);
+        app->accumulationFrameIndex = 0;
     }
 
     static inline void on_keyPress(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -950,6 +960,7 @@ public:
             app->prevMousePos = { x, y };
 
             app->camera.rotate(xoffset, yoffset);
+            app->accumulationFrameIndex = 0;
         }
         else if (app->lockedToParticle) {
             double x, y;
@@ -1169,8 +1180,11 @@ public:
                         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
                     }
                     if (globalIllumination) {
+                        ImGui::SameLine();
+                        if (ImGui::Button("Reset accumulation"))
+                            accumulationFrameIndex = 0;
                         if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
-                            glUniform1i(glGetUniformLocation(shader->id, "numRaysPerPixel"), numRaysPerPixel);
+                            glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
                     }
                     else {
                         if (ImGui::ToggleButton("Shadows", &shadows))
@@ -1240,7 +1254,7 @@ public:
                     Particle p = pBuffer[selected];
                     bool update = false;
                     float velocity = glm::length(p.vel);
-                    update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.02f);
+                    update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.01f);
                     if (update |= ImGui::DragFloat("Velocity", &velocity, (velocity / 10), FLT_MIN, FLT_MAX, "%.3g m/s", ImGuiSliderFlags_AlwaysClamp)) {
                         p.vel = glm::normalize(p.vel) * velocity;
                     }
@@ -1331,16 +1345,21 @@ public:
             ImGui::Render();
 
             shader->use();
-            glBindFramebuffer(GL_FRAMEBUFFER, bloom ? fbo : 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, screenTexture);
+
             camera.projMat(res.x, res.y, shader->id);
             glUniform1f(glGetUniformLocation(shader->id, "uTimeDelta"), timeStep * dt);
             glUniform1f(glGetUniformLocation(shader->id, "uTime"), currentTime);
+            glUniform1i(glGetUniformLocation(shader->id, "accumulationFrameIndex"), accumulationFrameIndex);
+            if (globalIllumination && timeStep == 0) accumulationFrameIndex++;
+            else accumulationFrameIndex = 0;
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
-            if (bloom) {
-                bloomshader->use();
-                bloomshader->render(screenTexture, bloomThreshold, bloomRadius, exposure);
-            }
+            bloomshader->use();
+            bloomshader->render(bloom, screenTexture, bloomThreshold, bloomRadius, exposure);
 
             cmptshader->use();
             glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep* dt);
