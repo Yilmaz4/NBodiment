@@ -1,4 +1,4 @@
-#define IMGUI_DEFINE_MATH_OPERATORS
+﻿#define IMGUI_DEFINE_MATH_OPERATORS
 #define STB_IMAGE_IMPLEMENTATION
 #define _USE_MATH_DEFINES
 #define NOMINMAX
@@ -121,7 +121,7 @@ namespace ImGui {
         colors[ImGuiCol_NavHighlight] = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 0.00f, 0.00f, 0.70f);
         colors[ImGuiCol_NavWindowingDimBg] = ImVec4(1.00f, 0.00f, 0.00f, 0.20f);
-        colors[ImGuiCol_ModalWindowDimBg] = ImVec4(1.00f, 0.00f, 0.00f, 0.35f);
+        colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.70f);
 
         ImGuiStyle& style = ImGui::GetStyle();
         style.WindowPadding = ImVec2(8.00f, 8.00f);
@@ -476,6 +476,10 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
+    inline void updateResolution(int w, int h) {
+        screenSize = { w, h };
+    }
+
     inline void render(bool bloom, GLuint srcTexture, float threshold, float radius, float exposure) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         this->renderDownsamples(srcTexture, threshold);
@@ -731,6 +735,8 @@ public:
     double doubleClickInterval = 0.4;
     glm::dvec2 lastPresses = { -doubleClickInterval, 0.0 };
     float timeStep = 1.0f;
+    bool paused = false;
+    bool reverse = false;
     int collisionType = 0;
 
     int hovering;
@@ -891,6 +897,8 @@ public:
         IM_ASSERT(ImGui::font != NULL);
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        io.IniFilename = NULL;
+        io.LogFilename = NULL;
         ImGui::load_theme();
         ImGui_ImplGlfw_InitForOpenGL(window, true);
         ImGui_ImplOpenGL3_Init("#version 430");
@@ -1155,8 +1163,26 @@ public:
                     ImGuiWindowFlags_NoMove
                 )) {
                     ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1e+3 * (currentTime - lastFrame));
+                    if (ImGui::Button("About"))
+                        ImGui::OpenPopup("About NBodiment");
+                    bool open = true;
+                    if (ImGui::BeginPopupModal("About NBodiment", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+                        ImGui::Text("NBodiment is a ray-traced gravitational N-body\nsimulator with rigid body physics.\n\nCopyright (c) 2017-2024 Yilmaz Alpaslan");
+                        ImGui::Dummy(ImVec2(0, 1));
+                        if (ImGui::Button("Open GitHub Page"))
+                            ShellExecuteW(0, 0, L"https://github.com/Yilmaz4/NBodiment", 0, 0, SW_SHOW);
+                        ImGui::SameLine();
+                        if (ImGui::Button("Close"))
+                            ImGui::CloseCurrentPopup();
+                        ImGui::EndPopup();
+                    }
                     ImGui::SeparatorText("Simulation");
-                    ImGui::SliderFloat("Time step", &timeStep, 0.f, 100.f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                    if (ImGui::Button(paused ? "Resume" : "Pause"))
+                        paused ^= 1;
+                    ImGui::SameLine();
+                    if (ImGui::Button("Reverse"))
+                        reverse ^= 1;
+                    ImGui::SliderFloat("Time step", &timeStep, FLT_MIN, 100.f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
 
                     const char* types[] = { "Elastic", "Inelastic", "No collision"};
                     const char* preview = types[collisionType];
@@ -1351,10 +1377,10 @@ public:
             glBindTexture(GL_TEXTURE_2D, screenTexture);
 
             camera.projMat(res.x, res.y, shader->id);
-            glUniform1f(glGetUniformLocation(shader->id, "uTimeDelta"), timeStep * dt);
+            glUniform1f(glGetUniformLocation(shader->id, "uTimeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
             glUniform1f(glGetUniformLocation(shader->id, "uTime"), currentTime);
             glUniform1i(glGetUniformLocation(shader->id, "accumulationFrameIndex"), accumulationFrameIndex);
-            if (globalIllumination && timeStep == 0) accumulationFrameIndex++;
+            if (globalIllumination && paused) accumulationFrameIndex++;
             else accumulationFrameIndex = 0;
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
@@ -1362,7 +1388,7 @@ public:
             bloomshader->render(bloom, screenTexture, bloomThreshold, bloomRadius, exposure);
 
             cmptshader->use();
-            glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep* dt);
+            glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
             glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
