@@ -63,6 +63,16 @@ namespace ImGui {
         return false;
     }
 
+    static void HelpMarker(const char* desc) {
+        ImGui::TextDisabled("(?)");
+        if (ImGui::BeginItemTooltip()) {
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::TextUnformatted(desc);
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
+    }
+
     inline static void load_theme() {
         ImGui::StyleColorsDark();
 
@@ -754,7 +764,7 @@ public:
 
     int num_particles = 100;
 
-    float min_distance = 5.f;
+    float min_distance = 2.5f;
     float max_distance = 5.f;
     float min_mass = 1e+6f;
     float max_mass = 1e+7f;
@@ -771,7 +781,7 @@ public:
     float central_mass = 1e+10f;
     float central_density = 1e+10f;
     float central_temperature = 3e+3;
-    float central_luminosity = 40.f;
+    float central_luminosity = 20.f;
 
     glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
 
@@ -1181,6 +1191,8 @@ public:
                     if (ImGui::Button("Reverse"))
                         reverse ^= 1;
                     ImGui::SliderFloat("Time step", &timeStep, FLT_MIN, 100.f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                    ImGui::SameLine();
+                    ImGui::HelpMarker("Higher values speed up the simulation while decreasing accuracy.");
 
                     const char* types[] = { "Elastic", "Inelastic", "No collision"};
                     const char* preview = types[collisionType];
@@ -1195,6 +1207,8 @@ public:
                         }
                         ImGui::EndCombo();
                     }
+                    ImGui::SameLine();
+                    ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
 
                     ImGui::SeparatorText("Environment");
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
@@ -1211,16 +1225,22 @@ public:
                             glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
                     }
                     else {
-                        if (ImGui::ToggleButton("Shadows", &shadows))
-                            glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
                         ImGui::SameLine();
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.f);
+                        ImGui::HelpMarker("Global illumination involves path tracing for added indirect illumination coming from reflections off surfaces.");
                     }
                     ImGui::ToggleButton("Bloom", &bloom);
+                    if (!globalIllumination) {
+                        ImGui::SameLine();
+                        if (ImGui::ToggleButton("Shadows", &shadows))
+                            glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
+                    }
                     if (bloom) {
                         ImGui::DragFloat("Bloom threshold", &bloomThreshold, bloomThreshold / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                         ImGui::DragFloat("Bloom radius", &bloomRadius, bloomRadius / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
+                        ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
                     }
-                    ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
+                    
                     ImGui::SeparatorText("Camera");
                     ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX);
                     ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
@@ -1309,8 +1329,8 @@ public:
                         if (lockedToParticle && following == selected) {
                             lockedToParticle = false;
                             camera.direction = -camera.localCoords;
-                            //camera.yaw -= 180;
-                            camera.pitch -= 180;
+                            camera.yaw -= 180;
+                            camera.pitch = -camera.pitch;
                         }
                         selectedParticle = false;
                         update = true;

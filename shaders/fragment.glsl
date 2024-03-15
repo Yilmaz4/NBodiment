@@ -194,9 +194,8 @@ void main() {
             fragColor = vec4(totalAccLight / float(spp), 1.f);
         }
         else {
-            totalAccLight /= float(spp);
             vec3 pixel = texture(previousFrame, gl_FragCoord.xy / screenSize).rgb;
-            fragColor = vec4(pixel + totalAccLight, 1.f);
+            fragColor = vec4(pixel + totalAccLight / float(spp), 1.f);
         }
     }
     else {
