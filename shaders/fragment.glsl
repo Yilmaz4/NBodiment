@@ -87,7 +87,7 @@ layout(binding = 5) uniform sampler1D starColor;
 
 uniform vec2 screenSize;
 uniform float uTime;
-uniform float uTimeDelta;
+uniform float timeDelta;
 uniform mat4 projMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 invProjMatrix;
@@ -184,6 +184,8 @@ void main() {
             vec3 accLight = trace(origin, direction, i);
             if (accLight.x == -1.f) {
                 fragColor = texture(skybox, texCoords);
+                if (accumulationFrameIndex > 1)
+                    fragColor *= accumulationFrameIndex;
                 return;
             }
             totalAccLight += accLight;
@@ -194,7 +196,7 @@ void main() {
         else {
             totalAccLight /= float(spp);
             vec3 pixel = texture(previousFrame, gl_FragCoord.xy / screenSize).rgb;
-            fragColor = vec4((pixel * accumulationFrameIndex + totalAccLight) / (accumulationFrameIndex + 1), 1.f);
+            fragColor = vec4(pixel + totalAccLight, 1.f);
         }
     }
     else {

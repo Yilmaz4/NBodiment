@@ -448,7 +448,7 @@ public:
             glGenTextures(1, &mip.texture);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
             // we are downscaling an HDR color buffer, so we need a float texture format
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F,
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F,
                 (int)mipSize.x, (int)mipSize.y,
                 0, GL_RGB, GL_FLOAT, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -480,10 +480,10 @@ public:
         screenSize = { w, h };
     }
 
-    inline void render(bool bloom, GLuint srcTexture, float threshold, float radius, float exposure) {
+    inline void render(bool bloom, GLuint srcTexture, float threshold, float radius, float exposure, int accumulationFrameIndex) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        this->renderDownsamples(srcTexture, threshold);
-        this->renderUpsamples(radius, exposure);
+        this->renderDownsamples(srcTexture, threshold, accumulationFrameIndex);
+        this->renderUpsamples(radius, exposure, accumulationFrameIndex);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, screenSize.x, screenSize.y);
@@ -497,11 +497,13 @@ public:
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
+        glUniform1i(glGetUniformLocation(displaytProgramID, "accumulationFrameIndex"), accumulationFrameIndex);
         glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 0.0);
         glBindTexture(GL_TEXTURE_2D, srcTexture);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
         if (bloom) {
+            glUniform1i(glGetUniformLocation(displaytProgramID, "accumulationFrameIndex"), -1);
             glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 1.0);
             glBindTexture(GL_TEXTURE_2D, mMipChain[0].texture);
             glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -512,10 +514,11 @@ public:
         glBindVertexArray(0);
     }
 
-    inline void renderDownsamples(GLuint srcTexture, float threshold) {
+    inline void renderDownsamples(GLuint srcTexture, float threshold, int accumulationFrameIndex) {
         glUseProgram(dwsampleProgramID);
         glUniform2f(glGetUniformLocation(dwsampleProgramID, "srcResolution"), screenSize.x, screenSize.y);
         glUniform1f(glGetUniformLocation(dwsampleProgramID, "threshold"), threshold);
+        glUniform1i(glGetUniformLocation(dwsampleProgramID, "accumulationFrameIndex"), accumulationFrameIndex);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, srcTexture);
@@ -536,7 +539,7 @@ public:
         glBindVertexArray(0);
         glUseProgram(0);
     }
-    inline void renderUpsamples(float radius, float exposure) {
+    inline void renderUpsamples(float radius, float exposure, int accumulationFrameIndex) {
         glUseProgram(upsampleProgramID);
         glUniform1f(glGetUniformLocation(upsampleProgramID, "filterRadius"), radius);
         glUniform1f(glGetUniformLocation(upsampleProgramID, "exposure"), exposure);
@@ -871,7 +874,7 @@ public:
         glGenTextures(1, &screenTexture);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, screenTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, res.x, res.y, 0, GL_RGB, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -914,7 +917,7 @@ public:
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, app->screenTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, app->res.x, app->res.y, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, app->res.x, app->res.y, 0, GL_RGB, GL_FLOAT, NULL);
         app->accumulationFrameIndex = 0;
     }
 
@@ -1147,6 +1150,7 @@ public:
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + following : nullptr);
+            if (glm::length(camera.velocity) > 0.1f) accumulationFrameIndex = 0;
             bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0 || hoveringParticle);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
@@ -1377,7 +1381,7 @@ public:
             glBindTexture(GL_TEXTURE_2D, screenTexture);
 
             camera.projMat(res.x, res.y, shader->id);
-            glUniform1f(glGetUniformLocation(shader->id, "uTimeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
+            glUniform1f(glGetUniformLocation(shader->id, "timeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
             glUniform1f(glGetUniformLocation(shader->id, "uTime"), currentTime);
             glUniform1i(glGetUniformLocation(shader->id, "accumulationFrameIndex"), accumulationFrameIndex);
             if (globalIllumination && paused) accumulationFrameIndex++;
@@ -1385,10 +1389,10 @@ public:
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
             bloomshader->use();
-            bloomshader->render(bloom, screenTexture, bloomThreshold, bloomRadius, exposure);
+            bloomshader->render(bloom, screenTexture, bloomThreshold, bloomRadius, exposure, accumulationFrameIndex);
 
             cmptshader->use();
-            glUniform1f(glGetUniformLocation(cmptshader->id, "uTimeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
+            glUniform1f(glGetUniformLocation(cmptshader->id, "timeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
             glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
             glDispatchCompute(pBuffer.size(), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);

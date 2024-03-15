@@ -59,7 +59,7 @@ void write(in int i, in Particle p) {
     vs[i + 20] = p.roughness;
 }
 
-uniform float uTimeDelta;
+uniform float timeDelta;
 uniform int collisionType; // 0: elastic, 1: inelastic, 2: none
 
 const float G = 6.67430e-11;
@@ -78,7 +78,7 @@ float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
 }
 
 void main() {
-    if (uTimeDelta == 0) return;
+    if (timeDelta == 0) return;
     Particle p = read(int(gl_GlobalInvocationID.x) * offset);
     if (p.mass == 0) return;
     vec3 totalAcc = vec3(0.0);
@@ -137,8 +137,8 @@ void main() {
     }
 
     p.acc = totalAcc;
-    p.vel += p.acc * uTimeDelta;
-    p.pos += p.vel * uTimeDelta;
+    p.vel += p.acc * timeDelta;
+    p.pos += p.vel * timeDelta;
 
     write(int(gl_GlobalInvocationID.x) * offset, p);
 }
