@@ -447,10 +447,7 @@ public:
 
             glGenTextures(1, &mip.texture);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
-            // we are downscaling an HDR color buffer, so we need a float texture format
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F,
-                (int)mipSize.x, (int)mipSize.y,
-                0, GL_RGB, GL_FLOAT, nullptr);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGB, GL_FLOAT, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -462,8 +459,7 @@ public:
             mMipChain.emplace_back(mip);
         }
 
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-            GL_TEXTURE_2D, mMipChain[0].texture, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mMipChain[0].texture, 0);
 
         // setup attachments
         unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
@@ -633,8 +629,6 @@ public:
     glm::vec3 localUp;
     float proximity = 5;
     Particle* following;
-    float theta = -90.f;
-    float phi = 0.f;
 
     float yaw = -90.0f;
     float pitch = 0.0f;
@@ -707,9 +701,9 @@ public:
         direction = glm::normalize(direction);
 
         if (following) {
-            localCoords.x = cos(glm::radians(yaw + 180)) * cos(glm::radians(pitch));
+            localCoords.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
             localCoords.y = sin(glm::radians(pitch));
-            localCoords.z = sin(glm::radians(yaw + 180)) * cos(glm::radians(pitch));
+            localCoords.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
             localCoords = glm::normalize(localCoords) * (following->radius * proximity);
         }
     }
@@ -828,7 +822,7 @@ public:
         }
         glfwMakeContextCurrent(window);
 
-        glfwSwapInterval(1);
+        glfwSwapInterval(0);
 
         glfwSetWindowUserPointer(window, this);
 
@@ -1150,7 +1144,7 @@ public:
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + following : nullptr);
-            if (glm::length(camera.velocity) > 0.1f) accumulationFrameIndex = 0;
+            if (glm::length(camera.velocity) > 0.02f) accumulationFrameIndex = 0;
             bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0 || hoveringParticle);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
@@ -1325,6 +1319,7 @@ public:
                         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
                         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                         glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(selected * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
+                        accumulationFrameIndex = 0;
                     }
                     ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
                     ImGui::PopFont();

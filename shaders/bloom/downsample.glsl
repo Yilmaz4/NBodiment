@@ -17,19 +17,19 @@ void main()
 
     vec3 data[13];
 
-    data[0] = texture(srcTexture, vec2(texCoord.x - 2 * x, texCoord.y + 2 * y)).rgb;
-    data[1] = texture(srcTexture, vec2(texCoord.x, texCoord.y + 2 * y)).rgb;
-    data[2] = texture(srcTexture, vec2(texCoord.x + 2 * x, texCoord.y + 2 * y)).rgb;
+    data[0]  = texture(srcTexture, vec2(texCoord.x - 2 * x, texCoord.y + 2 * y)).rgb;
+    data[1]  = texture(srcTexture, vec2(texCoord.x, texCoord.y + 2 * y)).rgb;
+    data[2]  = texture(srcTexture, vec2(texCoord.x + 2 * x, texCoord.y + 2 * y)).rgb;
 
-    data[3] = texture(srcTexture, vec2(texCoord.x - 2 * x, texCoord.y)).rgb;
-    data[4] = texture(srcTexture, vec2(texCoord.x, texCoord.y)).rgb;
-    data[5] = texture(srcTexture, vec2(texCoord.x + 2 * x, texCoord.y)).rgb;
+    data[3]  = texture(srcTexture, vec2(texCoord.x - 2 * x, texCoord.y)).rgb;
+    data[4]  = texture(srcTexture, vec2(texCoord.x, texCoord.y)).rgb;
+    data[5]  = texture(srcTexture, vec2(texCoord.x + 2 * x, texCoord.y)).rgb;
 
-    data[6] = texture(srcTexture, vec2(texCoord.x - 2 * x, texCoord.y - 2 * y)).rgb;
-    data[7] = texture(srcTexture, vec2(texCoord.x, texCoord.y - 2 * y)).rgb;
-    data[8] = texture(srcTexture, vec2(texCoord.x + 2 * x, texCoord.y - 2 * y)).rgb;
+    data[6]  = texture(srcTexture, vec2(texCoord.x - 2 * x, texCoord.y - 2 * y)).rgb;
+    data[7]  = texture(srcTexture, vec2(texCoord.x, texCoord.y - 2 * y)).rgb;
+    data[8]  = texture(srcTexture, vec2(texCoord.x + 2 * x, texCoord.y - 2 * y)).rgb;
 
-    data[9] = texture(srcTexture, vec2(texCoord.x - x, texCoord.y + y)).rgb;
+    data[9]  = texture(srcTexture, vec2(texCoord.x - x, texCoord.y + y)).rgb;
     data[10] = texture(srcTexture, vec2(texCoord.x + x, texCoord.y + y)).rgb;
     data[11] = texture(srcTexture, vec2(texCoord.x - x, texCoord.y - y)).rgb;
     data[12] = texture(srcTexture, vec2(texCoord.x + x, texCoord.y - y)).rgb;
