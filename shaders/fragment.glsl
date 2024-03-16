@@ -183,9 +183,7 @@ void main() {
         for (int i = 1; i < spp + 1; i++) {
             vec3 accLight = trace(origin, direction, i);
             if (accLight.x == -1.f) {
-                fragColor = texture(skybox, texCoords);
-                if (accumulationFrameIndex > 1)
-                    fragColor *= accumulationFrameIndex;
+                fragColor = texture(skybox, texCoords) * (accumulationFrameIndex + 1);
                 return;
             }
             totalAccLight += accLight;
