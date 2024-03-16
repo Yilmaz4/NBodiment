@@ -1348,8 +1348,8 @@ public:
                 if (lockedToParticle) {
                     fpconfigH = particleConfig(this, following, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f), "Following particle");
                 }
-                if (selectedParticle && following != selected) {
-                    particleConfig(this, selected, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f + fpconfigH), "Selected particle");
+                if (selectedParticle && (!lockedToParticle || following != selected)) {
+                    particleConfig(this, selected, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f + fpconfigH + (fpconfigH ? 10.f : 0.f)), "Selected particle");
                 }
                 
             }
