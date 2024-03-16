@@ -227,7 +227,7 @@ void main() {
         for (int i = 0; i < lidx; i++) {
             Particle q = read(lightSources[i]);
             float mt = 0.f;
-            if (shadows && index(hit, q.pos - hit, mt) != i) continue;
+            if (shadows && index(hit, q.pos - hit, mt) != lightSources[i]) continue;
             float angle = dot(normal, normalize(q.pos - p.pos));
             vec3 c = q.emissionColor * q.emissionStrength * angle * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
             if (angle >= 0) accLight += c;
