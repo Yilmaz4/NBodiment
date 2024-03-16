@@ -342,7 +342,7 @@ public:
     inline void free() { glDeleteProgram(id); }
 };
 
-class BloomShader : public Shader {
+class PostProcessing : public Shader {
     GLuint fbo;
 
     GLuint vertexShader;
@@ -375,7 +375,7 @@ class BloomShader : public Shader {
 
     std::vector<bloomMip> mMipChain;
 public:
-    inline BloomShader(int w, int h, int length) : mipChainLength(length) {
+    inline PostProcessing(int w, int h, int length) : mipChainLength(length) {
         screenSize = { w, h };
     }
     inline virtual void create() override {
@@ -457,7 +457,7 @@ public:
 
             glGenTextures(1, &mip.texture);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGB, GL_FLOAT, nullptr);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGBA, GL_FLOAT, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -470,8 +470,6 @@ public:
         }
 
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mMipChain[0].texture, 0);
-
-        // setup attachments
         unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
         glDrawBuffers(1, attachments);
 
@@ -486,10 +484,10 @@ public:
         screenSize = { w, h };
     }
 
-    inline void render(bool bloom, GLuint srcTexture, float threshold, float radius, float exposure, int accumulationFrameIndex) {
+    inline void render(bool bloom, GLuint srcTexture, float threshold, float exposure, int accumulationFrameIndex) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         this->renderDownsamples(srcTexture, threshold, accumulationFrameIndex);
-        this->renderUpsamples(radius, exposure, accumulationFrameIndex);
+        this->renderUpsamples(exposure, accumulationFrameIndex);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, screenSize.x, screenSize.y);
@@ -545,9 +543,8 @@ public:
         glBindVertexArray(0);
         glUseProgram(0);
     }
-    inline void renderUpsamples(float radius, float exposure, int accumulationFrameIndex) {
+    inline void renderUpsamples(float exposure, int accumulationFrameIndex) {
         glUseProgram(upsampleProgramID);
-        glUniform1f(glGetUniformLocation(upsampleProgramID, "filterRadius"), radius);
         glUniform1f(glGetUniformLocation(upsampleProgramID, "exposure"), exposure);
 
         glEnable(GL_BLEND);
@@ -723,7 +720,7 @@ class NBodiment {
 public:
     Shader* shader;
     ComputeShader* cmptshader;
-    BloomShader* bloomshader;
+    PostProcessing* pprocshader;
     Camera camera;
     GLuint ssbo;
     GLuint fbo;
@@ -757,8 +754,7 @@ public:
     bool globalIllumination = false;
     bool shadows = true;
     bool bloom = true;
-    float bloomThreshold = 2.0f;
-    float bloomRadius = 0.005f;
+    float bloomThreshold = 0.0001f;
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
 
@@ -853,8 +849,8 @@ public:
         glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
 
-        bloomshader = new BloomShader(res.x, res.y, 8);
-        bloomshader->create();
+        pprocshader = new PostProcessing(res.x, res.y, 8);
+        pprocshader->create();
 
         shader = new Shader();
         shader->create();
@@ -878,7 +874,7 @@ public:
         glGenTextures(1, &screenTexture);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, screenTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, res.x, res.y, 0, GL_RGB, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -921,7 +917,7 @@ public:
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, app->screenTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, app->res.x, app->res.y, 0, GL_RGB, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, app->res.x, app->res.y, 0, GL_RGBA, GL_FLOAT, NULL);
         app->accumulationFrameIndex = 0;
     }
 
@@ -1154,7 +1150,7 @@ public:
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + following : nullptr);
-            if (glm::length(camera.velocity) > 0.02f) accumulationFrameIndex = 0;
+            if (glm::length(camera.velocity) > 0.01f || keys.any()) accumulationFrameIndex = 0;
             bool imguiEnable = !camera.mouseLocked || (currentTime - lastSpeedChange < 2.0 || hoveringParticle);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
@@ -1175,7 +1171,7 @@ public:
                         ImGui::OpenPopup("About NBodiment");
                     bool open = true;
                     if (ImGui::BeginPopupModal("About NBodiment", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
-                        ImGui::Text("NBodiment is a ray-traced gravitational N-body\nsimulator with rigid body physics.\n\nCopyright (c) 2017-2024 Yilmaz Alpaslan");
+                        ImGui::Text("NBodiment is a ray-traced gravitational N-body simulator\nwith rigid body physics.\n\nCopyright (c) 2017-2024 Yilmaz Alpaslan");
                         ImGui::Dummy(ImVec2(0, 1));
                         if (ImGui::Button("Open GitHub Page"))
                             ShellExecuteW(0, 0, L"https://github.com/Yilmaz4/NBodiment", 0, 0, SW_SHOW);
@@ -1237,7 +1233,6 @@ public:
                     }
                     if (bloom) {
                         ImGui::DragFloat("Bloom threshold", &bloomThreshold, bloomThreshold / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
-                        ImGui::DragFloat("Bloom radius", &bloomRadius, bloomRadius / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                         ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
                     }
                     
@@ -1403,8 +1398,8 @@ public:
             else accumulationFrameIndex = 0;
             glDrawArrays(GL_TRIANGLES, 0, 36);
 
-            bloomshader->use();
-            bloomshader->render(bloom, screenTexture, bloomThreshold, bloomRadius, exposure, accumulationFrameIndex);
+            pprocshader->use();
+            pprocshader->render(bloom, screenTexture, bloomThreshold, exposure, accumulationFrameIndex);
 
             cmptshader->use();
             glUniform1f(glGetUniformLocation(cmptshader->id, "timeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
