@@ -1,4 +1,10 @@
-# NBodiment
+<div>
+  <h1>NBodiment</h1>
+  <img src="https://github.com/Yilmaz4/NBodiment/workflows/MSBuild/badge.svg" height="20px" />
+  <img src="https://img.shields.io/badge/Made%20with-OpenGL-5385b3.svg?style=flat&logo=opengl&logoColor=white" height="20px" />
+  <img src="https://img.shields.io/badge/License-MIT-a0250f.svg" height="20px" />
+</div>
+
 A ray-traced gravitational N-body simulator with rigid body physics, made in C++ and OpenGL. For my school physics project.
 ## Controls
 **WASD** - camera movement\
@@ -16,5 +22,3 @@ A ray-traced gravitational N-body simulator with rigid body physics, made in C++
 ### To-do:
 - Physically based luminosity w/ Planckian locus
 - Radiative cooling & heating
-- Path tracing accumulation
-- FFT convolution bloom
