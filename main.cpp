@@ -1283,15 +1283,15 @@ public:
                 sceneGenSize = ImGui::GetWindowSize();
                 ImGui::End();
 
-                if (selectedParticle) {
+                auto particleConfig = [](NBodiment* app, int idx, ImVec2 size, ImVec2 pos, const char* title) {
                     ImGui::PushFont(ImGui::font);
-                    ImGui::SetNextWindowPos({ 10.f, sceneGenSize.y + settingsSize.y + 30.f });
-                    ImGui::SetNextWindowSize(ImVec2(sceneGenSize.x, 0.f));
-                    ImGui::Begin("Selected particle", nullptr,
+                    ImGui::SetNextWindowPos(pos);
+                    ImGui::SetNextWindowSize(size);
+                    ImGui::Begin(title, nullptr,
                         ImGuiWindowFlags_AlwaysAutoResize |
                         ImGuiWindowFlags_NoMove
                     );
-                    Particle p = pBuffer[selected];
+                    Particle p = app->pBuffer[idx];
                     bool update = false;
                     float velocity = glm::length(p.vel);
                     update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.01f);
@@ -1307,40 +1307,51 @@ public:
                     update |= ImGui::DragFloat("Luminosity", &p.emissionStrength, 0.5f, FLT_MIN, FLT_MAX);
                     update |= ImGui::SliderFloat("Roughness", &p.roughness, 0.f, 1.f);
                     ImGui::SeparatorText("Actions");
-                    if (!(lockedToParticle && following == selected) && ImGui::Button("Follow")) {
-                        lockedToParticle = true;
-                        following = selected;
+                    if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
+                        app->lockedToParticle = true;
+                        app->following = idx;
                     }
-                    else if (lockedToParticle && following == selected && ImGui::Button("Unfollow")) {
-                        lockedToParticle = false;
-                        camera.direction = -camera.localCoords;
-                        camera.yaw -= 180;
-                        camera.pitch = -camera.pitch;
+                    else if (app->lockedToParticle && app->following == idx && ImGui::Button("Unfollow")) {
+                        app->lockedToParticle = false;
+                        app->camera.direction = -app->camera.localCoords;
+                        app->camera.yaw -= 180;
+                        app->camera.pitch = -app->camera.pitch;
                     }
 
                     ImGui::SameLine();
                     if (ImGui::Button("Delete")) {
                         p.mass = 0.f;
                         p.radius = 0.f;
-                        if (lockedToParticle && following == selected) {
-                            lockedToParticle = false;
-                            camera.direction = -camera.localCoords;
-                            camera.yaw -= 180;
-                            camera.pitch = -camera.pitch;
+                        if (app->lockedToParticle && app->following == idx) {
+                            app->lockedToParticle = false;
+                            app->camera.direction = -app->camera.localCoords;
+                            app->camera.yaw -= 180;
+                            app->camera.pitch = -app->camera.pitch;
                         }
-                        selectedParticle = false;
+                        app->selectedParticle = false;
                         update = true;
                     }
                     if (update) {
-                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
                         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                        glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(selected * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
-                        accumulationFrameIndex = 0;
+                        glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(idx * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
+                        app->accumulationFrameIndex = 0;
                     }
-                    ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
+                    ImGui::SetWindowPos({ app->res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
                     ImGui::PopFont();
+                    float height = ImGui::GetWindowSize().y;
                     ImGui::End();
+                    return height;
+                };
+
+                float fpconfigH = 0;
+                if (lockedToParticle) {
+                    fpconfigH = particleConfig(this, following, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f), "Following particle");
                 }
+                if (selectedParticle && following != selected) {
+                    particleConfig(this, selected, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f + fpconfigH), "Selected particle");
+                }
+                
             }
             if (currentTime - lastSpeedChange < 2.0) {
                 ImGui::PushFont(ImGui::font);
