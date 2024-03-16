@@ -199,7 +199,7 @@ void main() {
     else {
         float mt = 1.f / 0.f;
         int pidx = -1;
-        int lightSources[numParticles];
+        int lightSources[100]; // max number of lights in scene, adjust as needed
         int lidx = 0;
         for (int i = 0; i < numParticles * offset; i += offset) {
             Particle p = read(i);
@@ -229,7 +229,7 @@ void main() {
                 accLight = p.albedo;
                 break;
             }
-            Particle q = read(i);
+            Particle q = read(lightSources[i]);
             float mt = 0.f;
             if (shadows && index(hit, q.pos - hit, mt) != i) continue;
             float angle = dot(normal, normalize(q.pos - p.pos));

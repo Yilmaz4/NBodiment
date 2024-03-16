@@ -198,7 +198,7 @@ namespace phys {
     }
 
     glm::vec3 temperature_to_color(float t) {
-
+        return glm::vec3(0.f);
     }
 }
 
