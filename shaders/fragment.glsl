@@ -199,12 +199,12 @@ void main() {
     else {
         float mt = 1.f / 0.f;
         int pidx = -1;
-        int lightSources[100]; // max number of lights in scene, adjust as needed
+        int lightSources[5]; // max number of lights in scene, adjust as needed
         int lidx = 0;
         for (int i = 0; i < numParticles * offset; i += offset) {
             Particle p = read(i);
-            if (p.emissionStrength > 0.f) lightSources[lidx++] = i;
             if (p.radius == 0) continue;
+            if (p.emissionStrength > 0.f) lightSources[lidx++] = i;
             float t = intersect(origin, direction, p.pos, p.radius);
             if (t >= 0 && mt > t) {
                 pidx = i;
@@ -225,10 +225,6 @@ void main() {
         }
         vec3 accLight = vec3(0.f);
         for (int i = 0; i < lidx; i++) {
-            if (i == pidx) {
-                accLight = p.albedo;
-                break;
-            }
             Particle q = read(lightSources[i]);
             float mt = 0.f;
             if (shadows && index(hit, q.pos - hit, mt) != i) continue;
