@@ -1,4 +1,6 @@
-﻿#define IMGUI_DEFINE_MATH_OPERATORS
+﻿#define VERSION "0.2"
+
+#define IMGUI_DEFINE_MATH_OPERATORS
 #define STB_IMAGE_IMPLEMENTATION
 #define _USE_MATH_DEFINES
 #define NOMINMAX
@@ -28,6 +30,7 @@
 #include <math.h>
 #include <bitset>
 #include <limits>
+#include <functional>
 
 namespace ImGui {
     ImFont* font;
@@ -177,28 +180,42 @@ public:
 };
 
 namespace phys {
-    constexpr glm::mat3 xyz_to_rgb( // matrix to convert from CIE 1931 XYZ color space to sRGB
-        3.2404542f, -1.5371385f, -0.4985314f,
-        -0.9692660f, 1.8760108f, 0.0415560f,
-        0.0556434f, -0.2040259f, 1.0572252f
+    constexpr glm::dmat3 xyz_to_rgb( // matrix to convert from CIE 1931 XYZ color space to sRGB
+         3.2404542, -1.5371385, -0.4985314,
+        -0.9692660,  1.8760108,  0.0415560,
+         0.0556434, -0.2040259,  1.0572252
     );
-    constexpr float h = 6.62607015e+34; // planck's constant
-    constexpr float c = 299792458.f; // speed of light
-    constexpr float c_1 = 3.741771852e-16; // first radiation constant
-    constexpr float c_2 = 1.438776877e-02; // second radiation constant
-    constexpr float k_b = 1.380649e-23; // boltzmann constant
-    constexpr float b = 2.897771955e-3; // wien's displacement constant
+    constexpr double h = 6.62607015e+34; // planck's constant
+    constexpr double c = 299792458.0; // speed of light
+    constexpr double c_1 = 3.741771852e-16; // first radiation constant
+    constexpr double c_2 = 1.438776877e-02; // second radiation constant
+    constexpr double k_b = 1.380649e-23; // boltzmann constant
+    constexpr double b = 2.897771955e-3; // wien's displacement constant
 
-    float g(float x, float mu, float t_1, float t_2) {
-        return exp(-pow((x < mu) ? t_1 : t_2, 2) * pow(x - mu, 2) / 2.f);
+    // https://en.wikipedia.org/wiki/Planckian_locus#The_Planckian_locus_in_the_XYZ_color_space
+    static double M(double w, double t) { // black body spectral radiant exitance
+        return (2.0 * M_PI * h * pow(c, 2)) / (pow(w, 5) * (exp((h * c / k_b) / (w * t)) - 1));
     }
 
-    float M(float wavelength, float t) { // black body spectral radiant exitance
-        return c_1 / (pow(wavelength, 5) * (exp(c_2 / (wavelength * t)) - 1));
+    // https://en.wikipedia.org/wiki/CIE_1931_color_space#Color_matching_functions
+    static double g(double x, double mu, double t_1, double t_2) {
+        return exp(-pow((x < mu) ? t_1 : t_2, 2) * pow(x - mu, 2) / 2.0);
+    }
+    static double x(double w) { return 1.056 * g(w, 599.8, 0.0264, 0.0323) + 0.362 * g(w, 442.0, 0.0624, 0.0374) - 0.065 * g(w, 501.1, 0.0490, 0.0382); }
+    static double y(double w) { return 0.821 * g(w, 568.8, 0.0218, 0.0247) + 0.286 * g(w, 530.9, 0.0613, 0.0322); }
+    static double z(double w) { return 1.217 * g(w, 437.0, 0.0845, 0.0278) + 0.681 * g(w, 459.0, 0.0385, 0.0725); }
+
+    static double coord(std::function<double(double)> func, double t) {
+        double out = 0;
+        for (double w = 300.0; w < 700.0; w++) {
+            out += func(w) * M(w, t);
+        }
+        return out;
     }
 
-    glm::vec3 temperature_to_color(float t) {
-        return glm::vec3(0.f);
+    static glm::dvec3 temperature_to_color(double t) {
+        glm::dvec3 xyz = { coord(x, t), coord(y, t), coord(z, t) };
+        return xyz;
     }
 }
 
@@ -716,18 +733,45 @@ public:
     }
 };
 
+struct Scene {
+    int num_particles = 100;
+
+    float min_distance = 2.5f;
+    float max_distance = 5.f;
+    float min_mass = 1e+6f;
+    float max_mass = 1e+7f;
+    float min_density = 10e+8f;
+    float max_density = 10e+9f;
+    float min_temperature = 0.f;
+    float max_temperature = 0.f;
+    float min_velocity = 0.f;
+    float max_velocity = 1.f;
+
+    bool orbital_velocity = true;
+    bool disk_only = false;
+
+    bool central_particle = true;
+    float central_mass = 1e+10f;
+    float central_density = 1e+10f;
+    float central_temperature = 3e+3;
+    float central_luminosity = 20.f;
+};
+
 class NBodiment {
 public:
     Shader* shader;
     ComputeShader* cmptshader;
     PostProcessing* pprocshader;
     Camera camera;
+    Scene scene;
     GLuint ssbo;
     GLuint fbo;
     GLuint screenTexture;
 
     GLFWwindow* window;
     GLFWmonitor* monitor;
+    GLFWcursor* arrow;
+    GLFWcursor* hand;
 
     std::vector<Particle> pBuffer;
 
@@ -736,7 +780,7 @@ public:
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5.0;
-    double doubleClickInterval = 0.4;
+    double doubleClickInterval = 0.8;
     glm::dvec2 lastPresses = { -doubleClickInterval, 0.0 };
     float timeStep = 1.0f;
     bool paused = false;
@@ -758,30 +802,9 @@ public:
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
 
-    int num_particles = 100;
-
-    float min_distance = 2.5f;
-    float max_distance = 5.f;
-    float min_mass = 1e+6f;
-    float max_mass = 1e+7f;
-    float min_density = 10e+8f;
-    float max_density = 10e+9f;
-    float min_temperature = 0.f;
-    float max_temperature = 1e+4f;
-    float min_velocity = 0.f;
-    float max_velocity = 1.f;
-
-    bool orbital_velocity = true;
-    bool disk_only = false;
-
-    float central_mass = 1e+10f;
-    float central_density = 1e+10f;
-    float central_temperature = 3e+3;
-    float central_luminosity = 20.f;
-
     glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
 
-    void load_texture(const char* path, unsigned int binding, GLenum dimension) {
+    void load_texture(const char* path, unsigned int binding) {
         int width, height, nrChannels;
         unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
         if (!data) throw Error("texture not found in assets");
@@ -789,18 +812,12 @@ public:
 
         glGenTextures(1, &texture);
         glActiveTexture(GL_TEXTURE0 + binding);
-        glBindTexture(dimension, texture);
-        switch (dimension) {
-        case GL_TEXTURE_1D:
-            glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, width, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-            break;
-        case GL_TEXTURE_2D:
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-        }
-        glTexParameteri(dimension, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(dimension, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(dimension, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(dimension, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         stbi_image_free(data);
     }
 
@@ -808,6 +825,7 @@ public:
         std::setlocale(LC_CTYPE, ".UTF8");
 
         glfwInit();
+
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -823,21 +841,15 @@ public:
         glfwWindowHint(GLFW_SAMPLES, 4);
 
         window = glfwCreateWindow(res.x, res.y, "N-Body Simulation", monitor, NULL);
-        if (window == nullptr) {
-            throw Error("Failed to create OpenGL context");
-        }
+        if (window == nullptr) throw Error("Failed to create OpenGL context");
         glfwMakeContextCurrent(window);
-
         glfwSwapInterval(0);
-
         glfwSetWindowUserPointer(window, this);
 
         if (glfwRawMouseMotionSupported()) glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         glfwGetCursorPos(window, &prevMousePos.x, &prevMousePos.y);
 
-        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-            throw Error("Failed to load GLAD");
-        }
+        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) throw Error("Failed to load GLAD");
 
         glGenBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
@@ -864,10 +876,10 @@ public:
         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
         glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
 
-        load_texture("assets/8k_earth_daymap.jpg", 2, GL_TEXTURE_2D);
-        load_texture("assets/8k_earth_clouds.jpg", 3, GL_TEXTURE_2D);
-        load_texture("assets/8k_sun.jpg", 4, GL_TEXTURE_2D);
-        load_texture("assets/temperature.jpg", 5, GL_TEXTURE_1D);
+        load_texture("assets/8k_earth_daymap.jpg", 2);
+        load_texture("assets/8k_earth_clouds.jpg", 3);
+        load_texture("assets/8k_sun.jpg", 4);
+        load_texture("assets/temperature.jpg", 5);
 
         glEnable(GL_MULTISAMPLE);
 
@@ -889,6 +901,9 @@ public:
         glfwSetKeyCallback(window, on_keyPress);
         glfwSetScrollCallback(window, on_mouseScroll);
         glfwSetCursorPosCallback(window, on_mouseMove);
+
+        arrow = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+        hand = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
 
         on_windowResize(window, res.x, res.y);
 
@@ -1032,11 +1047,11 @@ public:
         std::mt19937 rng(rd());
 
         std::uniform_real_distribution<float> unit_vec(-1.f, 1.f);
-        std::uniform_real_distribution<float> pos(min_distance, max_distance);
-        std::uniform_real_distribution<float> vel(min_velocity, max_velocity);
-        std::uniform_real_distribution<float> mass(min_mass, max_mass);
-        std::uniform_real_distribution<float> density(min_density, max_density);
-        std::uniform_real_distribution<float> temp(min_temperature, max_temperature);
+        std::uniform_real_distribution<float> pos(scene.min_distance, scene.max_distance);
+        std::uniform_real_distribution<float> vel(scene.min_velocity, scene.max_velocity);
+        std::uniform_real_distribution<float> mass(scene.min_mass, scene.max_mass);
+        std::uniform_real_distribution<float> density(scene.min_density, scene.max_density);
+        std::uniform_real_distribution<float> temp(scene.min_temperature, scene.max_temperature);
         std::uniform_real_distribution<float> col(0.f, 1.f);
         
         pBuffer.clear();
@@ -1046,23 +1061,23 @@ public:
             .pos = glm::vec3(0.f),
             .vel = glm::vec3(0.f),
             .acc = glm::vec3(0.f),
-            .mass = central_mass,
-            .temp = central_temperature,
-            .radius = cbrt((3.f * (central_mass / central_density)) / (4.f * (float)(M_PI))),
+            .mass = scene.central_mass,
+            .temp = scene.central_temperature,
+            .radius = cbrt((3.f * (scene.central_mass / scene.central_density)) / (4.f * (float)(M_PI))),
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
             .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .emissionStrength = central_luminosity,
+            .emissionStrength = scene.central_luminosity,
             .metallicity = 0.f,
             .roughness = 0.f
         }));
         int tries = 0;
-        for (int i = 0; i < num_particles; i++) {
+        for (int i = 0; i < scene.num_particles; i++) {
             float m = mass(rng);
             float d = density(rng);
             float r = cbrt((3.f * (m / d)) / (4.f * (float)(M_PI)));
 
-            glm::vec3 p = { unit_vec(rng), !disk_only * unit_vec(rng), unit_vec(rng) };
+            glm::vec3 p = { unit_vec(rng), !scene.disk_only * unit_vec(rng), unit_vec(rng) };
             p = glm::normalize(p) * pos(rng);
 
             // check if overlapping with any of the previous particles
@@ -1076,8 +1091,8 @@ public:
             tries = 0;
 
             glm::vec3 v{};
-            if (orbital_velocity) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (central_mass + m) / glm::length(p));
-            else v = glm::normalize(glm::vec3(unit_vec(rng), !disk_only * unit_vec(rng), unit_vec(rng))) * vel(rng);
+            if (scene.orbital_velocity) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (scene.central_mass + m) / glm::length(p));
+            else v = glm::normalize(glm::vec3(unit_vec(rng), !scene.disk_only * unit_vec(rng), unit_vec(rng))) * vel(rng);
 
             glm::vec3 c = { col(rng), col(rng), col(rng) };
             
@@ -1147,7 +1162,18 @@ public:
                 }
             }
             hoveringParticle = closest != -1.f;
-            if (hoveringParticle) hovering = closest;
+            
+            if (hoveringParticle) {
+                hovering = closest;
+                if (!ImGui::GetIO().WantCaptureMouse) {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                    glfwSetCursor(window, hand);
+                }
+            }
+            else {
+                glfwSetCursor(window, arrow);
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+            }
 
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + following : nullptr);
@@ -1172,8 +1198,10 @@ public:
                         ImGui::OpenPopup("About NBodiment");
                     bool open = true;
                     if (ImGui::BeginPopupModal("About NBodiment", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
-                        ImGui::Text("NBodiment is a ray-traced gravitational N-body simulator\nwith rigid body physics.\n\nCopyright (c) 2017-2024 Yilmaz Alpaslan");
-                        ImGui::Dummy(ImVec2(0, 1));
+                        ImGui::Text("Version v" VERSION " (Build date: " __DATE__ " " __TIME__ ")\n\nNBodiment is a gravitational N-body simulator with\nray-tracing and rigid body physics.");
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 150, 150, 255));
+                        ImGui::Text(u8"Copyright © 2017-2024 Yilmaz Alpaslan");
+                        ImGui::PopStyleColor();
                         if (ImGui::Button("Open GitHub Page"))
                             ShellExecuteW(0, 0, L"https://github.com/Yilmaz4/NBodiment", 0, 0, SW_SHOW);
                         ImGui::SameLine();
@@ -1181,6 +1209,8 @@ public:
                             ImGui::CloseCurrentPopup();
                         ImGui::EndPopup();
                     }
+                    ImGui::SameLine();
+                    ImGui::Button("Check for updates");
                     ImGui::SeparatorText("Simulation");
                     if (ImGui::Button(paused ? "Resume" : "Pause"))
                         paused ^= 1;
@@ -1233,7 +1263,7 @@ public:
                             glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
                     }
                     if (bloom) {
-                        ImGui::DragFloat("Bloom threshold", &bloomThreshold, bloomThreshold / 20, FLT_MIN, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
+                        ImGui::DragFloat("Bloom threshold", &bloomThreshold, std::max(bloomThreshold / 20, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                         ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
                     }
                     
@@ -1255,28 +1285,33 @@ public:
                     ImGuiWindowFlags_AlwaysAutoResize |
                     ImGuiWindowFlags_NoMove
                 )) {
-                    ImGui::SliderInt("# Particles", &num_particles, 0, 1e+4, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+                    ImGui::SliderInt("# Particles", &scene.num_particles, 0, 1e+4, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
                     ImGui::PushItemWidth(100);
                     ImGui::SeparatorText("Distance");
-                    ImGui::DragFloat("Min##distance", &min_distance, min_distance / 20.f, FLT_MIN, std::min(FLT_MAX, max_distance), "%.9g m", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##distance", &max_distance, max_distance / 20.f, std::max(FLT_MIN, min_distance), FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::DragFloat("Min##distance", &scene.min_distance, scene.min_distance / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_distance), "%.9g m", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+                    ImGui::DragFloat("Max##distance", &scene.max_distance, scene.max_distance / 20.f, std::max(FLT_MIN, scene.min_distance), FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SeparatorText("Mass");
-                    ImGui::DragFloat("Min##mass", &min_mass, min_mass / 20.f, FLT_MIN, std::min(FLT_MAX, max_mass), "%.9g kg", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##mass", &max_mass, max_mass / 20.f, std::max(FLT_MIN, min_mass), FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::DragFloat("Min##mass", &scene.min_mass, scene.min_mass / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_mass), "%.9g kg", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+                    ImGui::DragFloat("Max##mass", &scene.max_mass, scene.max_mass / 20.f, std::max(FLT_MIN, scene.min_mass), FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SeparatorText("Density");
-                    ImGui::DragFloat("Min##density", &min_density, min_density / 20.f, FLT_MIN, std::min(FLT_MAX, max_density), "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##density", &max_density, max_density / 20.f, std::max(FLT_MIN, min_density), FLT_MAX, "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SeparatorText("Temperature");
-                    ImGui::DragFloat("Min##temperature", &min_temperature, min_temperature / 20.f, FLT_MIN, std::min(FLT_MAX, max_temperature), "%.9g K", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##temperature", &max_temperature, max_temperature / 20.f, std::max(FLT_MIN, min_temperature), FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::DragFloat("Min##density", &scene.min_density, scene.min_density / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_density), "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+                    ImGui::DragFloat("Max##density", &scene.max_density, scene.max_density / 20.f, std::max(FLT_MIN, scene.min_density), FLT_MAX, "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SeparatorText("Velocity");
-                    ImGui::Checkbox("Automatic Orbital Velocity", &orbital_velocity);
-                    if (!orbital_velocity) {
-                        ImGui::DragFloat("Min##velocity", &min_velocity, min_velocity / 20.f, 0.f, std::min(FLT_MAX, max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                        ImGui::DragFloat("Max##velocity", &max_velocity, max_velocity / 20.f, std::max(0.f, min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::Checkbox("Automatic Orbital Velocity", &scene.orbital_velocity);
+                    if (!scene.orbital_velocity) {
+                        ImGui::DragFloat("Min##velocity", &scene.min_velocity, scene.min_velocity / 20.f, 0.f, std::min(FLT_MAX, scene.max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+                        ImGui::DragFloat("Max##velocity", &scene.max_velocity, scene.max_velocity / 20.f, std::max(0.f, scene.min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
                     }
-                    ImGui::Checkbox("No vertical component", &disk_only);
+                    ImGui::Checkbox("No vertical component", &scene.disk_only);
+                    ImGui::SameLine();
+                    ImGui::HelpMarker("Particles will be placed on a horizontal plane only.");
                     ImGui::PopItemWidth();
+                    ImGui::SeparatorText("Central body");
+                    ImGui::DragFloat("Mass", &scene.central_mass, scene.central_mass / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::DragFloat("Density", &scene.central_density, scene.central_density / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::DragFloat("Emission strength", &scene.central_luminosity, std::max(scene.central_luminosity / 20.f, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal, 3.f);
+                    
                     if (ImGui::Button("Load", ImVec2(100, 0))) generate_scene();
                 }
                 ImGui::PopFont();
@@ -1310,6 +1345,7 @@ public:
                     if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
                         app->lockedToParticle = true;
                         app->following = idx;
+                        app->accumulationFrameIndex = 0;
                     }
                     else if (app->lockedToParticle && app->following == idx && ImGui::Button("Unfollow")) {
                         app->lockedToParticle = false;
@@ -1370,7 +1406,7 @@ public:
                 ImGui::PushFont(ImGui::font);
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);
-                ImGui::SetNextWindowPos({ static_cast<float>(x + 10.f), static_cast<float>(y) });
+                ImGui::SetNextWindowPos({ static_cast<float>(x + 15.f), static_cast<float>(y) });
                 ImGui::Begin("##pInfo", nullptr,
                     ImGuiWindowFlags_AlwaysAutoResize |
                     ImGuiWindowFlags_NoCollapse |
