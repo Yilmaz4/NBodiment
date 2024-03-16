@@ -83,7 +83,7 @@ layout(binding = 1) uniform samplerCube skybox;
 layout(binding = 2) uniform sampler2D earthDaymap;
 layout(binding = 3) uniform sampler2D earthClouds;
 layout(binding = 4) uniform sampler2D starTexture;
-layout(binding = 5) uniform sampler1D starColor;
+layout(binding = 5) uniform sampler2D temperatureRamp;
 
 uniform vec2 screenSize;
 uniform float uTime;
@@ -173,6 +173,12 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
     return accLight;
 }
 
+const float stefan_boltzmann = 5.670374419e-8f;
+
+vec3 temperature_to_color(float t, float radius) { // unused
+    return texture2D(temperatureRamp, vec2(0.5f, clamp(t / 25000.f, 0.f, 1.f))).rgb;
+}
+
 void main() {
     vec2 coord = (gl_FragCoord.xy + gl_SamplePosition) / screenSize;
     vec3 direction = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
@@ -199,7 +205,7 @@ void main() {
     else {
         float mt = 1.f / 0.f;
         int pidx = -1;
-        int lightSources[5]; // max number of lights in scene, adjust as needed
+        int lightSources[100]; // max number of lights in scene, adjust as needed
         int lidx = 0;
         for (int i = 0; i < numParticles * offset; i += offset) {
             Particle p = read(i);
@@ -227,10 +233,11 @@ void main() {
         for (int i = 0; i < lidx; i++) {
             Particle q = read(lightSources[i]);
             float mt = 0.f;
-            if (shadows && index(hit, q.pos - hit, mt) != lightSources[i]) continue;
-            float angle = dot(normal, normalize(q.pos - p.pos));
+            int obstacle = index(hit, q.pos - hit, mt);
+            if (shadows && obstacle != lightSources[i] && obstacle != pidx) continue;
+            float angle = dot(normal, normalize(q.pos - p.pos)); 
             vec3 c = q.emissionColor * q.emissionStrength * angle * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
-            if (angle >= 0) accLight += c;
+            if (angle > 0.f) accLight += c;
         }
         vec3 color = accLight + p.emissionColor * p.emissionStrength + p.albedo * ambientLight;
         fragColor = vec4(color, 1.f);
