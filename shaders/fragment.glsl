@@ -104,7 +104,7 @@ float random(inout uint state) {
     state = (state + accumulationFrameIndex * 100) * 747796405 + 2891336453;
     uint result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
     result = (result >> 22) ^ result;
-    return result / 4294967295.0;
+    return float(result) / 4294967295.f;
 }
 
 float randomND(inout uint seed) {

@@ -754,7 +754,7 @@ public:
     bool globalIllumination = false;
     bool shadows = true;
     bool bloom = true;
-    float bloomThreshold = 2.f;
+    float bloomThreshold = 1.f;
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
 
@@ -1077,7 +1077,7 @@ public:
 
             glm::vec3 v{};
             if (orbital_velocity) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (central_mass + m) / glm::length(p));
-            else v = glm::normalize(glm::vec3(unit_vec(rng), unit_vec(rng), unit_vec(rng))) * vel(rng);
+            else v = glm::normalize(glm::vec3(unit_vec(rng), !disk_only * unit_vec(rng), unit_vec(rng))) * vel(rng);
 
             glm::vec3 c = { col(rng), col(rng), col(rng) };
             
@@ -1101,6 +1101,7 @@ public:
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(pBuffer.data()), GL_DYNAMIC_DRAW);
         glUniform1i(glGetUniformLocation(shader->id, "numParticles"), pBuffer.size());
+        accumulationFrameIndex = 0;
     }
 
     void mainloop() {
