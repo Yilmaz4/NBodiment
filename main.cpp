@@ -457,7 +457,7 @@ public:
 
             glGenTextures(1, &mip.texture);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGBA, GL_FLOAT, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -754,7 +754,7 @@ public:
     bool globalIllumination = false;
     bool shadows = true;
     bool bloom = true;
-    float bloomThreshold = 0.0001f;
+    float bloomThreshold = 2.f;
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
 
