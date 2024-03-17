@@ -1,13 +1,23 @@
+
 <div>
-  <h1>NBodiment</h1>
   <img src="https://github.com/Yilmaz4/NBodiment/workflows/MSBuild/badge.svg" height="20px" />
-  <img src="https://img.shields.io/badge/Made%20with-OpenGL-5385b3.svg?style=flat&logo=opengl&logoColor=white" height="20px" />
   <img src="https://img.shields.io/badge/License-MIT-a0250f.svg" height="20px" />
+  <img src="https://img.shields.io/badge/Made%20with-OpenGL-5385b3.svg?style=flat&logo=opengl&logoColor=white" height="20px" />
+</div>
+<div>
+  <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/a1bf6f1b-ea59-488a-b093-90d16f50358c" height="100px" />
+</div>
+A gravitational N-body simulator with ray-tracing and rigid body physics, made in C++ and OpenGL. For my highschool physics project.
+<p>&nbsp;</p>
+<div>
+  <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/d3f9f67e-d602-470a-9f84-7d18106c977b" width="450px" />
 </div>
 
-A ray-traced gravitational N-body simulator with rigid body physics, made in C++ and OpenGL. For my school physics project.
 ## Controls
 **WASD** - camera movement\
+**Q** - Pause/resume simulation\
+**E** - Reverse time\
+**R/F** - Speed up/slow down simulation\
 **Space/Left Shift** - camera up/down\
 **Left Ctrl** - lock/unlock mouse\
 **Mouse Scroll** - adjust camera speed\
@@ -17,8 +27,14 @@ A ray-traced gravitational N-body simulator with rigid body physics, made in C++
 **F11** - enter/exit fullscreen\
 **ESC** - exit
 
-![ezgif-2-2e8e7b4e82](https://github.com/Yilmaz4/NBodiment/assets/77583632/9c58457d-2223-48b6-9115-e530bda6b816)
+## Path tracing
+<div>
+  <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/63a58710-6125-4589-9968-d74eebacb12c" width="400px" />
+  <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/c5722035-a9c1-4ac9-a884-c54b0abd42b2" width="400px" />
+</div>
 
-### To-do:
-- Physically based luminosity w/ Planckian locus
-- Radiative cooling & heating
+## Elastic collisions
+<div>
+  <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/652a370d-3e6b-4c2d-a1fb-10dad4f076d4" width="400px" />
+  <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/74d94073-d1e1-4055-9689-7e0694a1ce6a" width="400px" />
+</div>
