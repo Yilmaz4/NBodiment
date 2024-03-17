@@ -971,6 +971,15 @@ public:
                 glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
                 glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                 glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(app->selected * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
+                break;
+            case GLFW_KEY_Q:
+                app->paused ^= 1; break;
+            case GLFW_KEY_E:
+                app->reverse ^= 1; break;
+            case GLFW_KEY_R:
+                app->timeStep *= 2; break;
+            case GLFW_KEY_F:
+                app->timeStep /= 2; break;
             }
             break;
         case GLFW_RELEASE:
@@ -1238,8 +1247,10 @@ public:
                     ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
 
                     ImGui::SeparatorText("Environment");
-                    if (ImGui::ColorEdit3("Ambient light", &ambientLight[0]))
+                    if (ImGui::ColorEdit3("Ambient light", &ambientLight[0])) {
                         glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
+                        accumulationFrameIndex = 0;
+                    }  
                     ImGui::SeparatorText("Graphics");
                     if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
                         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
@@ -1268,8 +1279,10 @@ public:
                     }
                     
                     ImGui::SeparatorText("Camera");
-                    ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX);
-                    ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g");
+                    if (ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX))
+                        accumulationFrameIndex = 0;
+                    if (ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g"))
+                        accumulationFrameIndex = 0;
                     ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
                 }
                 ImGui::PopFont();
@@ -1299,8 +1312,8 @@ public:
                     ImGui::SeparatorText("Velocity");
                     ImGui::Checkbox("Automatic Orbital Velocity", &scene.orbital_velocity);
                     if (!scene.orbital_velocity) {
-                        ImGui::DragFloat("Min##velocity", &scene.min_velocity, scene.min_velocity / 20.f, 0.f, std::min(FLT_MAX, scene.max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                        ImGui::DragFloat("Max##velocity", &scene.max_velocity, scene.max_velocity / 20.f, std::max(0.f, scene.min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::DragFloat("Min##velocity", &scene.min_velocity, std::max(scene.min_velocity / 20.f, 1e-9f), 0.f, std::min(FLT_MAX, scene.max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+                        ImGui::DragFloat("Max##velocity", &scene.max_velocity, std::max(scene.max_velocity / 20.f, 1e-9f), std::max(0.f, scene.min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
                     }
                     ImGui::Checkbox("No vertical component", &scene.disk_only);
                     ImGui::SameLine();
@@ -1312,7 +1325,7 @@ public:
                     ImGui::DragFloat("Emission strength", &scene.central_luminosity, std::max(scene.central_luminosity / 20.f, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal, 3.f);
                     
-                    if (ImGui::Button("Load", ImVec2(100, 0))) generate_scene();
+                    if (ImGui::Button("Generate", ImVec2(100, 0))) generate_scene();
                 }
                 ImGui::PopFont();
                 sceneGenSize = ImGui::GetWindowSize();
