@@ -106,9 +106,6 @@
     <Filter Include="Resources\Shaders">
       <UniqueIdentifier>{03cef03c-e707-4101-8c86-35b49fb0b82b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resources\Skybox">
-      <UniqueIdentifier>{1ddc4d80-5218-49ef-9a67-b5b1a4e6f5ff}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Resources\Shaders\Bloom">
       <UniqueIdentifier>{6db1ff89-3b1a-4ee5-9896-bd37015022f9}</UniqueIdentifier>
     </Filter>
@@ -117,25 +114,5 @@
     <ResourceCompile Include="shaders\NBodiment.rc">
       <Filter>Resources</Filter>
     </ResourceCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="skybox\0.png">
-      <Filter>Resources\Skybox</Filter>
-    </Image>
-    <Image Include="skybox\1.png">
-      <Filter>Resources\Skybox</Filter>
-    </Image>
-    <Image Include="skybox\2.png">
-      <Filter>Resources\Skybox</Filter>
-    </Image>
-    <Image Include="skybox\3.png">
-      <Filter>Resources\Skybox</Filter>
-    </Image>
-    <Image Include="skybox\4.png">
-      <Filter>Resources\Skybox</Filter>
-    </Image>
-    <Image Include="skybox\5.png">
-      <Filter>Resources\Skybox</Filter>
-    </Image>
   </ItemGroup>
 </Project>

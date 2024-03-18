@@ -195,14 +195,6 @@
   <ItemGroup>
     <ResourceCompile Include="shaders\NBodiment.rc" />
   </ItemGroup>
-  <ItemGroup>
-    <Image Include="skybox\0.png" />
-    <Image Include="skybox\1.png" />
-    <Image Include="skybox\2.png" />
-    <Image Include="skybox\3.png" />
-    <Image Include="skybox\4.png" />
-    <Image Include="skybox\5.png" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
