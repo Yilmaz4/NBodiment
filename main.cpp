@@ -980,6 +980,18 @@ public:
                 app->timeStep *= 2; break;
             case GLFW_KEY_F:
                 app->timeStep /= 2; break;
+            case GLFW_KEY_X:
+                if (app->lockedToParticle) {
+                    app->lockedToParticle = false;
+                    app->camera.direction = -app->camera.localCoords;
+                    app->camera.yaw -= 180;
+                    app->camera.pitch = -app->camera.pitch;
+                }
+                else if (app->selectedParticle) {
+                    app->lockedToParticle = true;
+                    app->following = app->selected;
+                }
+                break;
             }
             break;
         case GLFW_RELEASE:
