@@ -173,8 +173,6 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
     return accLight;
 }
 
-const float stefan_boltzmann = 5.670374419e-8f;
-
 vec3 temperature_to_color(float t, float radius) { // unused
     return texture2D(temperatureRamp, vec2(0.5f, clamp(t / 25000.f, 0.f, 1.f))).rgb;
 }
@@ -189,7 +187,7 @@ void main() {
         for (int i = 1; i < spp + 1; i++) {
             vec3 accLight = trace(origin, direction, i);
             if (accLight.x == -1.f) {
-                fragColor = texture(skybox, texCoords) * (accumulationFrameIndex + 1);
+                fragColor = texture(skybox, texCoords);
                 return;
             }
             totalAccLight += accLight;
@@ -199,7 +197,7 @@ void main() {
         }
         else {
             vec3 pixel = texture(previousFrame, gl_FragCoord.xy / screenSize).rgb;
-            fragColor = vec4(pixel + totalAccLight / float(spp), 1.f);
+            fragColor = vec4(mix(pixel, totalAccLight / float(spp), 1.f / accumulationFrameIndex), 1.f);
         }
     }
     else {

@@ -9,8 +9,7 @@ uniform int accumulationFrameIndex;
 in vec2 texCoord;
 layout(location = 0) out vec3 fragColor;
 
-void main()
-{
+void main() {
     vec2 srcTexelSize = 1.0 / srcResolution;
     float x = srcTexelSize.x;
     float y = srcTexelSize.y;
@@ -35,7 +34,6 @@ void main()
     data[12] = texture(srcTexture, vec2(texCoord.x + x, texCoord.y - y)).rgb;
 
     for (int i = 0; i < 13 && depth == 0; i++) {
-        if (accumulationFrameIndex > 1) data[i] /= accumulationFrameIndex;
         data[i] -= threshold;
     }
 
