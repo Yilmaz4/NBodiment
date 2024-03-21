@@ -637,11 +637,13 @@ struct Particle {
 
     glm::vec3 albedo;
     glm::vec3 emissionColor;
+    glm::vec3 absorptionColor;
     float luminosity;
     float specularity;
     float metallicity;
     float translucency;
     float index_of_refraction;
+    float blurriness;
 };
 
 class Camera {
@@ -1149,7 +1151,8 @@ public:
                 .specularity = 0.f,
                 .metallicity = 1.f,
                 .translucency = 0.f,
-                .index_of_refraction = 1.f
+                .index_of_refraction = 1.f,
+                .blurriness = 0.f
             }));
         }
 
@@ -1387,9 +1390,13 @@ public:
                     update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
                     update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.5f, FLT_MIN, FLT_MAX);
                     update |= ImGui::SliderFloat("Specularity", &p.specularity, 0.f, 1.f);
-                    update |= ImGui::SliderFloat("Metallicity", &p.metallicity, 0.f, 1.f);
-                    update |= ImGui::SliderFloat("Translucency", &p.translucency, 0.f, 1.f);
-                    update |= ImGui::SliderFloat("Index of refraction", &p.index_of_refraction, 0.f, 1.f);
+                    if ((update |= ImGui::SliderFloat("Metallicity", &p.metallicity, 0.f, 1.f)) && p.metallicity > 1.f - p.translucency)
+                        p.metallicity = 1.f - p.translucency;
+                    if ((update |= ImGui::SliderFloat("Translucency", &p.translucency, 0.f, 1.f)) && p.translucency > 1.f - p.metallicity)
+                        p.translucency = 1.f - p.metallicity;
+                    update |= ImGui::ColorEdit3("Absorption Color", glm::value_ptr(p.absorptionColor));
+                    update |= ImGui::SliderFloat("Index of refraction", &p.index_of_refraction, 1.f, 5.f);
+                    update |= ImGui::SliderFloat("Blurriness", &p.blurriness, 0.f, 1.f);
                     ImGui::SeparatorText("Actions");
                     if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
                         app->lockedToParticle = true;

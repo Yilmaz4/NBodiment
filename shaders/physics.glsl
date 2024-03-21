@@ -12,13 +12,15 @@ struct Particle {
 
     vec3 albedo;
     vec3 emissionColor;
+    vec3 absorptionColor;
     float luminosity;
     float specularity;
     float metallicity;
     float translucency;
-    float index_of_refraction;
+    float refractive_index;
+    float blurriness;
 };
-const int offset = 23;
+const int offset = 27;
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
@@ -33,7 +35,8 @@ Particle read(in int i) {
         vs[i + 9], vs[i + 10], vs[i + 11],
         vec3(vs[i + 12], vs[i + 13], vs[i + 14]),
         vec3(vs[i + 15], vs[i + 16], vs[i + 17]),
-        vs[i + 18], vs[i + 19], vs[i + 20], vs[i + 21], vs[i + 22]
+        vec3(vs[i + 18], vs[i + 19], vs[i + 20]),
+        vs[i + 21], vs[i + 22], vs[i + 23], vs[i + 24], vs[i + 25], vs[i + 26]
     );
 }
 
@@ -56,11 +59,15 @@ void write(in int i, in Particle p) {
     vs[i + 15] = p.emissionColor.r;
     vs[i + 16] = p.emissionColor.g;
     vs[i + 17] = p.emissionColor.b;
-    vs[i + 18] = p.luminosity;
-    vs[i + 19] = p.specularity;
-    vs[i + 20] = p.metallicity;
-    vs[i + 21] = p.translucency;
-    vs[i + 22] = p.index_of_refraction;
+    vs[i + 18] = p.absorptionColor.r;
+    vs[i + 19] = p.absorptionColor.g;
+    vs[i + 20] = p.absorptionColor.b;
+    vs[i + 21] = p.luminosity;
+    vs[i + 22] = p.specularity;
+    vs[i + 23] = p.metallicity;
+    vs[i + 24] = p.translucency;
+    vs[i + 25] = p.refractive_index;
+    vs[i + 26] = p.blurriness;
 }
 
 uniform float timeDelta;
