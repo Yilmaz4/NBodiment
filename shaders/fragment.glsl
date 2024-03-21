@@ -11,19 +11,21 @@ struct Particle {
     float mass;
     float temp;
     float radius;
-    
+
     vec3 albedo;
     vec3 emissionColor;
-    float emissionStrength;
+    float luminosity;
+    float specularity;
     float metallicity;
-    float roughness;
+    float translucency;
+    float index_of_refraction;
 };
-const int offset = 21;
+const int offset = 23;
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
 };
-uniform const int numParticles = 10;
+uniform int numParticles;
 
 Particle read(in int i) {
     return Particle(
@@ -33,7 +35,7 @@ Particle read(in int i) {
         vs[i + 9], vs[i + 10], vs[i + 11],
         vec3(vs[i + 12], vs[i + 13], vs[i + 14]),
         vec3(vs[i + 15], vs[i + 16], vs[i + 17]),
-        vs[i + 18], vs[i + 19], vs[i + 20]
+        vs[i + 18], vs[i + 19], vs[i + 20], vs[i + 21], vs[i + 22]
     );
 }
 
@@ -56,9 +58,11 @@ void write(in int i, in Particle p) {
     vs[i + 15] = p.emissionColor.r;
     vs[i + 16] = p.emissionColor.g;
     vs[i + 17] = p.emissionColor.b;
-    vs[i + 18] = p.emissionStrength;
-    vs[i + 19] = p.metallicity;
-    vs[i + 20] = p.roughness;
+    vs[i + 18] = p.luminosity;
+    vs[i + 19] = p.specularity;
+    vs[i + 20] = p.metallicity;
+    vs[i + 21] = p.translucency;
+    vs[i + 22] = p.index_of_refraction;
 }
 
 vec3 polar_to_cartesian(in float longitude, in float latitude, in float radius) {
@@ -77,7 +81,6 @@ float atan2(in float y, in float x) {
 layout(binding = 0) uniform sampler2D previousFrame;
 uniform int accumulationFrameIndex;
 
-in vec3 texCoords;
 layout(binding = 1) uniform samplerCube skybox;
 
 layout(binding = 2) uniform sampler2D earthDaymap;
@@ -155,7 +158,7 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
         int pidx = index(origin, direction, mt);
         if (pidx == -1) {
             if (depth == 0) return vec3(-1.f);
-            accLight += p.albedo * ambientLight;
+            accLight += p.albedo * texture(skybox, direction).rgb;
             break;
         }
         p = read(pidx);
@@ -165,9 +168,9 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
 
         vec3 diffuse = normalize(normal + randomDirection(seed, normal));
         vec3 specular = direction - 2 * dot(direction, normal) * normal;
-        direction = mix(specular, diffuse, p.roughness);
+        direction = mix(diffuse, specular, p.specularity);
 
-        accLight += p.emissionColor * p.emissionStrength * rayColor;
+        accLight += p.emissionColor * p.luminosity * rayColor;
         rayColor *= p.albedo;
     }
     return accLight;
@@ -187,7 +190,7 @@ void main() {
         for (int i = 1; i < spp + 1; i++) {
             vec3 accLight = trace(origin, direction, i);
             if (accLight.x == -1.f) {
-                fragColor = texture(skybox, texCoords);
+                fragColor = texture(skybox, direction);
                 return;
             }
             totalAccLight += accLight;
@@ -208,7 +211,7 @@ void main() {
         for (int i = 0; i < numParticles * offset; i += offset) {
             Particle p = read(i);
             if (p.radius == 0) continue;
-            if (p.emissionStrength > 0.f) lightSources[lidx++] = i;
+            if (p.luminosity > 0.f) lightSources[lidx++] = i;
             float t = intersect(origin, direction, p.pos, p.radius);
             if (t >= 0 && mt > t) {
                 pidx = i;
@@ -216,7 +219,7 @@ void main() {
             }
         }
         if (pidx == -1) {
-            fragColor = texture(skybox, texCoords);
+            fragColor = texture(skybox, direction);
             return;
         }
         Particle p = read(pidx);
@@ -234,10 +237,10 @@ void main() {
             int obstacle = index(hit, q.pos - hit, mt);
             if (shadows && obstacle != lightSources[i] && obstacle != pidx) continue;
             float angle = dot(normal, normalize(q.pos - p.pos)); 
-            vec3 c = q.emissionColor * q.emissionStrength * angle * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
+            vec3 c = q.emissionColor * q.luminosity * angle * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
             if (angle > 0.f) accLight += c;
         }
-        vec3 color = accLight + p.emissionColor * p.emissionStrength + p.albedo * ambientLight;
+        vec3 color = accLight + p.emissionColor * p.luminosity + p.albedo * ambientLight;
         fragColor = vec4(color, 1.f);
     }
 }

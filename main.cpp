@@ -637,9 +637,11 @@ struct Particle {
 
     glm::vec3 albedo;
     glm::vec3 emissionColor;
-    float emissionStrength;
+    float luminosity;
+    float specularity;
     float metallicity;
-    float roughness;
+    float translucency;
+    float index_of_refraction;
 };
 
 class Camera {
@@ -757,6 +759,23 @@ struct Scene {
     float central_luminosity = 20.f;
 };
 
+struct Controls {
+    GLenum forward   = GLFW_KEY_W;
+    GLenum backward  = GLFW_KEY_S;
+    GLenum leftward  = GLFW_KEY_A;
+    GLenum rightward = GLFW_KEY_D;
+    GLenum upward    = GLFW_KEY_SPACE;
+    GLenum downward  = GLFW_KEY_LEFT_SHIFT;
+    GLenum del       = GLFW_KEY_DELETE;
+    GLenum camctrl   = GLFW_KEY_LEFT_CONTROL;
+    GLenum pause     = GLFW_KEY_Q;
+    GLenum reverse   = GLFW_KEY_E;
+    GLenum speedup   = GLFW_KEY_R;
+    GLenum speeddown = GLFW_KEY_F;
+    GLenum follow    = GLFW_KEY_X;
+    GLenum toggleGI  = GLFW_KEY_G;
+};
+
 class NBodiment {
 public:
     Shader* shader;
@@ -764,6 +783,7 @@ public:
     PostProcessing* pprocshader;
     Camera camera;
     Scene scene;
+    Controls controls;
     GLuint ssbo;
     GLuint fbo;
     GLuint screenTexture;
@@ -941,16 +961,9 @@ public:
         switch (action) {
         case GLFW_PRESS:
             app->keys |= ((int)(key == GLFW_KEY_W) | (int)(key == GLFW_KEY_A) << 1 | (int)(key == GLFW_KEY_S) << 2 | (int)(key == GLFW_KEY_D) << 3 | (int)(key == GLFW_KEY_SPACE) << 4 | (int)(key == GLFW_KEY_LEFT_SHIFT) << 5);
-            switch (key) {
-            case GLFW_KEY_ESCAPE:
+            if (key == GLFW_KEY_ESCAPE) {
                 glfwSetWindowShouldClose(window, true);
-                break;
-            case GLFW_KEY_LEFT_CONTROL:
-                app->camera.mouseLocked ^= 1;
-                glfwGetCursorPos(window, &app->prevMousePos.x, &app->prevMousePos.y);
-                glfwSetInputMode(window, GLFW_CURSOR, app->camera.mouseLocked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-                break;
-            case GLFW_KEY_F11:
+            } if (key == GLFW_KEY_F11) {
                 if (glfwGetWindowMonitor(window) == nullptr) {
                     const GLFWvidmode* mode = glfwGetVideoMode(app->monitor);
                     glfwGetWindowPos(window, &app->pos.x, &app->pos.y);
@@ -961,8 +974,11 @@ public:
                     app->res = { 600, 600 };
                     glfwSetWindowMonitor(window, nullptr, app->pos.x, app->pos.y, app->res.x, app->res.y, 0);
                 }
-                break;
-            case GLFW_KEY_DELETE:
+            } if (key == app->controls.camctrl) {
+                app->camera.mouseLocked ^= 1;
+                glfwGetCursorPos(window, &app->prevMousePos.x, &app->prevMousePos.y);
+                glfwSetInputMode(window, GLFW_CURSOR, app->camera.mouseLocked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+            } if (key == app->controls.del) {
                 if (app->lockedToParticle && app->following == app->selected) return;
                 Particle p = app->pBuffer[app->selected];
                 p.mass = 0.f;
@@ -971,16 +987,15 @@ public:
                 glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
                 glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                 glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(app->selected * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
-                break;
-            case GLFW_KEY_Q:
-                app->paused ^= 1; break;
-            case GLFW_KEY_E:
-                app->reverse ^= 1; break;
-            case GLFW_KEY_R:
-                app->timeStep *= 2; break;
-            case GLFW_KEY_F:
-                app->timeStep /= 2; break;
-            case GLFW_KEY_X:
+            } if (key == app->controls.pause) {
+                app->paused ^= 1;
+            } if (key == app->controls.reverse) {
+                app->reverse ^= 1;
+            } if (key == app->controls.speedup) {
+                app->timeStep *= 2;
+            } if (key == app->controls.speeddown) {
+                app->timeStep /= 2;
+            } if (key == app->controls.follow) {
                 if (app->lockedToParticle) {
                     app->lockedToParticle = false;
                     app->camera.direction = -app->camera.localCoords;
@@ -991,7 +1006,9 @@ public:
                     app->lockedToParticle = true;
                     app->following = app->selected;
                 }
-                break;
+            } if (key == app->controls.toggleGI) {
+                app->globalIllumination ^= 1;
+                glUniform1i(glGetUniformLocation(app->shader->id, "globalIllumination"), app->globalIllumination);
             }
             break;
         case GLFW_RELEASE:
@@ -1077,7 +1094,6 @@ public:
         
         pBuffer.clear();
 
-
         pBuffer.push_back(Particle({
             .pos = glm::vec3(0.f),
             .vel = glm::vec3(0.f),
@@ -1088,9 +1104,11 @@ public:
 
             .albedo = glm::vec3(0.f, 0.f, 0.f),
             .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .emissionStrength = scene.central_luminosity,
-            .metallicity = 0.f,
-            .roughness = 0.f
+            .luminosity = scene.central_luminosity,
+            .specularity = 0.f,
+            .metallicity = 1.f,
+            .translucency = 0.f,
+            .index_of_refraction = 1.f
         }));
         int tries = 0;
         for (int i = 0; i < scene.num_particles; i++) {
@@ -1127,9 +1145,11 @@ public:
 
                 .albedo = c,
                 .emissionColor = c,
-                .emissionStrength = 0.f,
-                .metallicity = 0.f,
-                .roughness = 1.f,
+                .luminosity = 0.f,
+                .specularity = 0.f,
+                .metallicity = 1.f,
+                .translucency = 0.f,
+                .index_of_refraction = 1.f
             }));
         }
 
@@ -1217,8 +1237,7 @@ public:
                     ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1e+3 * (currentTime - lastFrame));
                     if (ImGui::Button("About"))
                         ImGui::OpenPopup("About NBodiment");
-                    bool open = true;
-                    if (ImGui::BeginPopupModal("About NBodiment", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+                    if (ImGui::BeginPopupModal("About NBodiment", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
                         ImGui::Text("Version v" VERSION " (Build date: " __DATE__ " " __TIME__ ")\n\nNBodiment is a gravitational N-body simulator with\nray-tracing and rigid body physics.");
                         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 150, 150, 255));
                         ImGui::Text(u8"Copyright © 2017-2024 Yilmaz Alpaslan");
@@ -1231,7 +1250,9 @@ public:
                         ImGui::EndPopup();
                     }
                     ImGui::SameLine();
-                    ImGui::Button("Check for updates");
+                    if (ImGui::Button("Check for updates")) {
+                        // not yet implemented
+                    }
                     ImGui::SeparatorText("Simulation");
                     if (ImGui::Button(paused ? "Resume" : "Pause"))
                         paused ^= 1;
@@ -1364,8 +1385,11 @@ public:
                     ImGui::SeparatorText("Appearance");
                     update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
                     update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
-                    update |= ImGui::DragFloat("Luminosity", &p.emissionStrength, 0.5f, FLT_MIN, FLT_MAX);
-                    update |= ImGui::SliderFloat("Roughness", &p.roughness, 0.f, 1.f);
+                    update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.5f, FLT_MIN, FLT_MAX);
+                    update |= ImGui::SliderFloat("Specularity", &p.specularity, 0.f, 1.f);
+                    update |= ImGui::SliderFloat("Metallicity", &p.metallicity, 0.f, 1.f);
+                    update |= ImGui::SliderFloat("Translucency", &p.translucency, 0.f, 1.f);
+                    update |= ImGui::SliderFloat("Index of refraction", &p.index_of_refraction, 0.f, 1.f);
                     ImGui::SeparatorText("Actions");
                     if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
                         app->lockedToParticle = true;
