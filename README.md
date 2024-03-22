@@ -7,7 +7,7 @@
 <div>
   <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/a1bf6f1b-ea59-488a-b093-90d16f50358c" height="100px" />
 </div>
-A gravitational N-body simulator with ray-tracing and rigid body physics, made in C++ and OpenGL. For my highschool physics project.
+A gravitational N-body simulator with path-tracing and rigid body physics, made in C++ and OpenGL. For my highschool physics project.
 <p>&nbsp;</p>
 <div>
   <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/d3f9f67e-d602-470a-9f84-7d18106c977b" width="450px" />
@@ -15,15 +15,17 @@ A gravitational N-body simulator with ray-tracing and rigid body physics, made i
 
 ## Controls
 **WASD** - camera movement\
-**Q** - Pause/resume simulation\
-**E** - Reverse time\
-**R/F** - Speed up/slow down simulation\
+**Q** - pause/resume simulation\
+**E** - reverse time\
+**R/F** - speed up/slow down simulation\
+**G** - toggle global illumination\
 **Space/Left Shift** - camera up/down\
 **Left Ctrl** - lock/unlock mouse\
 **Mouse Scroll** - adjust camera speed\
 **Left Click** - select\
 **Double Left Click** - follow\
 **Del** - delete selected particle\
+**X** - follow selected particle\
 **F11** - enter/exit fullscreen\
 **ESC** - exit
 
