@@ -642,7 +642,7 @@ struct Particle {
     float specularity;
     float metallicity;
     float translucency;
-    float index_of_refraction;
+    float refractive_index;
     float blurriness;
 };
 
@@ -795,6 +795,7 @@ public:
     GLFWcursor* arrow;
     GLFWcursor* hand;
 
+    std::vector<Particle> original;
     std::vector<Particle> pBuffer;
 
     glm::ivec2 res;
@@ -1110,7 +1111,8 @@ public:
             .specularity = 0.f,
             .metallicity = 1.f,
             .translucency = 0.f,
-            .index_of_refraction = 1.f
+            .refractive_index = 1.f,
+            .blurriness = 0.f
         }));
         int tries = 0;
         for (int i = 0; i < scene.num_particles; i++) {
@@ -1151,10 +1153,12 @@ public:
                 .specularity = 0.f,
                 .metallicity = 1.f,
                 .translucency = 0.f,
-                .index_of_refraction = 1.f,
+                .refractive_index = 1.f,
                 .blurriness = 0.f
             }));
         }
+
+        original = pBuffer;
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -1301,7 +1305,7 @@ public:
                     else {
                         ImGui::SameLine();
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.f);
-                        ImGui::HelpMarker("Global illumination involves path tracing for added indirect illumination coming from reflections off surfaces.");
+                        ImGui::HelpMarker("Global illumination, or path tracing, is a computer algorithm to produce physically based and realistic-looking 3D scenes by simulating the very nature of light, which causes optical effects like reflection, refraction and soft shadows to naturally emerge instead of having to be explicitly implemented.\n\nPause the simulation to start accumulating samples in order to address noise.");
                     }
                     ImGui::ToggleButton("Bloom", &bloom);
                     if (!globalIllumination) {
@@ -1390,12 +1394,14 @@ public:
                     update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
                     update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.5f, FLT_MIN, FLT_MAX);
                     update |= ImGui::SliderFloat("Specularity", &p.specularity, 0.f, 1.f);
+                    ImGui::SameLine(); ImGui::HelpMarker("Measure of how microscopically smooth the surface is, which affects how uniformly it reflects incident light.");
                     if ((update |= ImGui::SliderFloat("Metallicity", &p.metallicity, 0.f, 1.f)) && p.metallicity > 1.f - p.translucency)
                         p.metallicity = 1.f - p.translucency;
+                    ImGui::SameLine(); ImGui::HelpMarker("Measure of how much of incoming light is reflected.");
                     if ((update |= ImGui::SliderFloat("Translucency", &p.translucency, 0.f, 1.f)) && p.translucency > 1.f - p.metallicity)
                         p.translucency = 1.f - p.metallicity;
                     update |= ImGui::ColorEdit3("Absorption Color", glm::value_ptr(p.absorptionColor));
-                    update |= ImGui::SliderFloat("Index of refraction", &p.index_of_refraction, 1.f, 5.f);
+                    update |= ImGui::SliderFloat("Refractive index", &p.refractive_index, 1.f, 10.f);
                     update |= ImGui::SliderFloat("Blurriness", &p.blurriness, 0.f, 1.f);
                     ImGui::SeparatorText("Actions");
                     if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
@@ -1423,6 +1429,17 @@ public:
                         app->selectedParticle = false;
                         update = true;
                     }
+
+                    ImGui::SameLine();
+                    if (ImGui::Button("Reset")) {
+                        Particle q = app->original[idx];
+                        q.pos = p.pos;
+                        q.vel = p.vel;
+                        q.acc = p.acc;
+                        p = q;
+                        update = true;
+                    }
+
                     if (update) {
                         glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
                         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
