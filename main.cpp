@@ -803,8 +803,6 @@ public:
     std::bitset<6> keys{ 0x0 };
     glm::dvec2 prevMousePos{ 0.f, 0.f };
     double lastSpeedChange = -5.0;
-    double doubleClickInterval = 0.8;
-    glm::dvec2 lastPresses = { -doubleClickInterval, 0.0 };
     float timeStep = 1.0f;
     bool paused = false;
     bool reverse = false;
@@ -1051,9 +1049,10 @@ public:
         switch (button) {
         case GLFW_MOUSE_BUTTON_LEFT:
             if (action == GLFW_PRESS) {
-                if (app->hovering == app->selected) {
-                    app->lastPresses.x = app->lastPresses.y;
-                    app->lastPresses.y = glfwGetTime();
+                if (app->hoveringParticle && app->selected == app->hovering) {
+                    app->lockedToParticle = true;
+                    app->following = app->selected;
+                    app->accumulationFrameIndex = 0;
                 }
                 app->selectedParticle = app->hoveringParticle;
                 app->selected = app->hovering;
@@ -1061,11 +1060,6 @@ public:
                     app->selected = app->following;
                     app->selectedParticle = true;
                 }
-            }
-            else if (app->hoveringParticle && app->lastPresses.y - app->lastPresses.x < app->doubleClickInterval && app->selected == app->hovering) {
-                app->lockedToParticle = true;
-                app->following = app->selected;
-                app->lastPresses.x = app->lastPresses.y - app->doubleClickInterval - 1.f;
             }
             break;
         case GLFW_MOUSE_BUTTON_RIGHT:
@@ -1401,7 +1395,7 @@ public:
                     if ((update |= ImGui::SliderFloat("Translucency", &p.translucency, 0.f, 1.f)) && p.translucency > 1.f - p.metallicity)
                         p.translucency = 1.f - p.metallicity;
                     update |= ImGui::ColorEdit3("Absorption Color", glm::value_ptr(p.absorptionColor));
-                    update |= ImGui::SliderFloat("Refractive index", &p.refractive_index, 1.f, 10.f);
+                    update |= ImGui::SliderFloat("Refractive index", &p.refractive_index, 1.f, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
                     update |= ImGui::SliderFloat("Blurriness", &p.blurriness, 0.f, 1.f);
                     ImGui::SeparatorText("Actions");
                     if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
