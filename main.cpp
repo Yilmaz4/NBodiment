@@ -360,6 +360,7 @@ public:
 };
 
 class PostProcessing : public Shader {
+public:
     GLuint fbo;
 
     GLuint vertexShader;
@@ -391,7 +392,7 @@ class PostProcessing : public Shader {
     int mipChainLength;
 
     std::vector<bloomMip> mMipChain;
-public:
+
     inline PostProcessing(int w, int h, int length) : mipChainLength(length) {
         screenSize = { w, h };
     }
@@ -495,10 +496,6 @@ public:
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    }
-
-    inline void updateResolution(int w, int h) {
-        screenSize = { w, h };
     }
 
     inline void render(bool bloom, GLuint srcTexture, float threshold, float exposure, int accumulationFrameIndex) {
@@ -954,6 +951,20 @@ public:
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, app->screenTexture);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, app->res.x, app->res.y, 0, GL_RGBA, GL_FLOAT, NULL);
+        
+        app->pprocshader->screenSize = app->res;
+        glm::vec2 mipSize = app->res;
+        glm::ivec2 mipIntSize = static_cast<glm::ivec2>(app->res);
+        for (unsigned int i = 0; i < app->pprocshader->mipChainLength; i++) {
+            PostProcessing::bloomMip& mip = app->pprocshader->mMipChain[i];
+            mip.size = mipSize;
+            mip.intSize = mipIntSize;
+            glBindTexture(GL_TEXTURE_2D, mip.texture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, (int)mipSize.x, (int)mipSize.y, 0, GL_RGBA, GL_FLOAT, nullptr);
+            mipSize *= 0.5f;
+            mipIntSize /= 2;
+        }
+
         app->accumulationFrameIndex = 0;
     }
 
