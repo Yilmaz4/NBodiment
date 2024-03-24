@@ -227,61 +227,15 @@ class Shader {
     GLuint vao, vbo;
     GLuint textureID;
 
-    float vertices[108] = {
-        -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-        -1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f
+    float vertices[12] = {
+        -1.0f, -1.0f,
+        -1.0f,  1.0f,
+         1.0f,  1.0f,
+        -1.0f, -1.0f,
+         1.0f,  1.0f,
+         1.0f, -1.0f
     };
-
-    static inline void load_textures() {
-        int width, height, nrChannels;
-        unsigned char* data;
-        for (int i = 0; i < 6; i++) {
-            std::string path = std::format("assets/{}.png", i);
-            data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
-            if (!data) throw Error("Skybox not available");
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-            stbi_image_free(data);
-        }
-    }
+    
 protected:
     static inline char* read_resource(int name) {
         HMODULE handle = GetModuleHandleW(NULL);
@@ -308,6 +262,18 @@ protected:
 public:
     GLuint id;
 
+    static inline void load_textures(int tex) {
+        int width, height, nrChannels;
+        unsigned char* data;
+        for (int i = 0; i < 6; i++) {
+            std::string path = std::format("assets/{}{}.jpg", tex, i);
+            data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+            if (!data) throw Error("Skybox not available");
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
+        }
+    }
+
     inline virtual void create() {
         char* vertexSource = read_resource(IDR_VRTX);
         char* fragmentSource = read_resource(IDR_FRAG);
@@ -333,12 +299,12 @@ public:
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
 
         glActiveTexture(GL_TEXTURE1);
         glGenTextures(1, &textureID);
         glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
-        load_textures();
+        load_textures(0);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -819,6 +785,7 @@ public:
     float bloomThreshold = 1.f;
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
+    int skyboxImage = 0;
 
     glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
 
@@ -955,8 +922,7 @@ public:
         app->pprocshader->screenSize = app->res;
         glm::vec2 mipSize = app->res;
         glm::ivec2 mipIntSize = static_cast<glm::ivec2>(app->res);
-        for (unsigned int i = 0; i < app->pprocshader->mipChainLength; i++) {
-            PostProcessing::bloomMip& mip = app->pprocshader->mMipChain[i];
+        for (PostProcessing::bloomMip& mip : app->pprocshader->mMipChain) {
             mip.size = mipSize;
             mip.intSize = mipIntSize;
             glBindTexture(GL_TEXTURE_2D, mip.texture);
@@ -1228,6 +1194,16 @@ public:
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
             }
 
+            if (lockedToParticle && pBuffer[following].mass == 0) {
+                camera.direction = -camera.localCoords;
+                camera.yaw -= 180;
+                camera.pitch = -camera.pitch;
+                lockedToParticle = false;
+                if (selected == following) {
+                    selectedParticle = false;
+                }
+            }
+
             glfwPollEvents();
             camera.processInput(this->keys, static_cast<float>(dt), lockedToParticle ? pBuffer.data() + following : nullptr);
             if (glm::length(camera.velocity) > 0.01f || keys.any()) accumulationFrameIndex = 0;
@@ -1295,7 +1271,22 @@ public:
                     if (ImGui::ColorEdit3("Ambient light", &ambientLight[0])) {
                         glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
                         accumulationFrameIndex = 0;
-                    }  
+                    }
+                    const char* images[] = { "Milky Way", "Sorsele" };
+                    preview = images[skyboxImage];
+
+                    if (ImGui::BeginCombo("Skybox", preview)) {
+                        for (int n = 0; n < 2; n++) {
+                            const bool is_selected = (skyboxImage == n);
+                            if (ImGui::Selectable(images[n], is_selected)) {
+                                skyboxImage = n;
+                                shader->load_textures(n);
+                                accumulationFrameIndex = 0;
+                            }
+                            if (is_selected) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
                     ImGui::SeparatorText("Graphics");
                     if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
                         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
@@ -1396,6 +1387,7 @@ public:
                     update |= ImGui::DragFloat("Radius", &p.radius, (p.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SeparatorText("Appearance");
                     update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
+                    ImGui::SameLine(); ImGui::HelpMarker("Proportion of the incident light that is reflected by the surface.");
                     update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
                     update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.5f, FLT_MIN, FLT_MAX);
                     update |= ImGui::SliderFloat("Specularity", &p.specularity, 0.f, 1.f);
@@ -1407,6 +1399,7 @@ public:
                         p.translucency = 1.f - p.metallicity;
                     update |= ImGui::ColorEdit3("Absorption Color", glm::value_ptr(p.absorptionColor));
                     update |= ImGui::SliderFloat("Refractive index", &p.refractive_index, 1.f, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                    ImGui::SameLine(); ImGui::HelpMarker("Ratio of the speed of light in a vacuum to the speed of light inside the material.\nAir: 1.0003, Water: 1.33, Glass: 1.52, Diamond: 2.41");
                     update |= ImGui::SliderFloat("Blurriness", &p.blurriness, 0.f, 1.f);
                     ImGui::SeparatorText("Actions");
                     if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
