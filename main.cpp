@@ -828,7 +828,7 @@ public:
         window = glfwCreateWindow(res.x, res.y, "N-Body Simulation", monitor, NULL);
         if (window == nullptr) throw Error("Failed to create OpenGL context");
         glfwMakeContextCurrent(window);
-        glfwSwapInterval(0);
+        glfwSwapInterval(1);
         glfwSetWindowUserPointer(window, this);
 
         if (glfwRawMouseMotionSupported()) glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
@@ -1272,11 +1272,11 @@ public:
                         glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
                         accumulationFrameIndex = 0;
                     }
-                    const char* images[] = { "Milky Way", "Sorsele" };
+                    const char* images[] = { "Milky Way", "Sorsele", "Mountains" };
                     preview = images[skyboxImage];
 
                     if (ImGui::BeginCombo("Skybox", preview)) {
-                        for (int n = 0; n < 2; n++) {
+                        for (int n = 0; n < 3; n++) {
                             const bool is_selected = (skyboxImage == n);
                             if (ImGui::Selectable(images[n], is_selected)) {
                                 skyboxImage = n;
