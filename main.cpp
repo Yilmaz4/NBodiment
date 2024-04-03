@@ -1,5 +1,7 @@
 ﻿#define VERSION "0.2"
 
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define STB_IMAGE_IMPLEMENTATION
 #define _USE_MATH_DEFINES
@@ -266,7 +268,7 @@ public:
         int width, height, nrChannels;
         unsigned char* data;
         for (int i = 0; i < 6; i++) {
-            std::string path = std::format("assets/{}{}.jpg", tex, i);
+            std::string path = std::format("assets\\{}{}.jpg", tex, i);
             data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
             if (!data) throw Error("Skybox not available");
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
@@ -607,6 +609,8 @@ struct Particle {
     float translucency;
     float refractive_index;
     float blurriness;
+
+    int texture;
 };
 
 class Camera {
@@ -786,8 +790,12 @@ public:
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
     int skyboxImage = 0;
-
     glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
+
+    Particle satellite;
+    float orbital_radius;
+    glm::vec3 orbital_velocity;
+    float orbital_period;
 
     void load_texture(const char* path, unsigned int binding) {
         int width, height, nrChannels;
@@ -860,11 +868,6 @@ public:
         glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
         glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
-
-        load_texture("assets/8k_earth_daymap.jpg", 2);
-        load_texture("assets/8k_earth_clouds.jpg", 3);
-        load_texture("assets/8k_sun.jpg", 4);
-        load_texture("assets/temperature.jpg", 5);
 
         glEnable(GL_MULTISAMPLE);
 
@@ -1064,7 +1067,7 @@ public:
         std::uniform_real_distribution<float> mass(scene.min_mass, scene.max_mass);
         std::uniform_real_distribution<float> density(scene.min_density, scene.max_density);
         std::uniform_real_distribution<float> temp(scene.min_temperature, scene.max_temperature);
-        std::uniform_real_distribution<float> col(0.f, 1.f);
+        std::uniform_real_distribution<float> clr(0.f, 1.f);
         
         pBuffer.clear();
 
@@ -1094,7 +1097,6 @@ public:
             glm::vec3 p = { unit_vec(rng), !scene.disk_only * unit_vec(rng), unit_vec(rng) };
             p = glm::normalize(p) * pos(rng);
 
-            // check if overlapping with any of the previous particles
             bool abort_flag = false;
             for (int j = 0; j <= i; j++) if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r) abort_flag = true;
             if (abort_flag && tries < 100) {
@@ -1108,7 +1110,7 @@ public:
             if (scene.orbital_velocity) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (scene.central_mass + m) / glm::length(p));
             else v = glm::normalize(glm::vec3(unit_vec(rng), !scene.disk_only * unit_vec(rng), unit_vec(rng))) * vel(rng);
 
-            glm::vec3 c = { col(rng), col(rng), col(rng) };
+            glm::vec3 c = { clr(rng), clr(rng), clr(rng) };
             
             pBuffer.push_back(Particle({
                 .pos = p,
@@ -1376,6 +1378,50 @@ public:
                         ImGuiWindowFlags_NoMove
                     );
                     Particle p = app->pBuffer[idx];
+
+                    if (ImGui::BeginPopupModal("Add satellite", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+                        glm::vec3& v = app->orbital_velocity;
+                        float& r = app->orbital_radius;
+                        float& t = app->orbital_period;
+
+                        app->satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
+                        r = glm::length(app->satellite.pos - p.pos);
+                        v = glm::cross(glm::normalize(app->satellite.pos - p.pos), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (p.mass + app->satellite.mass) / r);
+                        t = 2.f * M_PI * r / glm::length(v);
+
+                        ImGui::DragFloat("Mass", &app->satellite.mass, (app->satellite.mass / 10.f), FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::DragFloat("Temperature", &app->satellite.temp, (app->satellite.temp / 10.f), FLT_MIN, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::DragFloat("Radius", &app->satellite.radius, (app->satellite.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::SeparatorText("Motion");
+                        if (ImGui::DragFloat("Orbital Period", &t, (t / 10.f), 2.f * M_PI * (p.radius + app->satellite.radius) / glm::length(v), FLT_MAX, "%.9g s", ImGuiSliderFlags_AlwaysClamp)) {
+                            r = glm::length(v) * t / (2.f * M_PI);
+                            app->satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
+                            v = glm::normalize(v) * static_cast<float>(2.f * M_PI * r / glm::length(t));
+                        }
+                        if (ImGui::DragFloat("Orbital Radius", &r, (r / 10.f), p.radius + app->satellite.radius, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp)) {
+                            app->satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
+                            v = glm::cross(glm::normalize(app->satellite.pos - p.pos), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (p.mass + app->satellite.mass) / r);
+                            t = 2.f * M_PI * r / glm::length(v);
+                        }
+                        if (ImGui::Button("Add")) {
+                            app->satellite.vel = p.vel + v;
+                            app->pBuffer.push_back(app->satellite);
+                            app->original.push_back(app->satellite);
+
+                            glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
+                            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                            glBufferData(GL_SHADER_STORAGE_BUFFER, app->pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(app->pBuffer.data()), GL_DYNAMIC_DRAW);
+                            glUniform1i(glGetUniformLocation(app->shader->id, "numParticles"), app->pBuffer.size());
+                            app->accumulationFrameIndex = 0;
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Cancel")) {
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::EndPopup();
+                    }
+
                     bool update = false;
                     float velocity = glm::length(p.vel);
                     update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.01f);
@@ -1436,6 +1482,31 @@ public:
                         q.acc = p.acc;
                         p = q;
                         update = true;
+                    }
+                    
+                    ImGui::SameLine();
+                    if (ImGui::Button("Add sattelite")) {
+                        std::random_device rd;
+                        std::mt19937 rng(rd());
+                        std::uniform_real_distribution<float> clr(0.f, 1.f);
+
+                        app->satellite = Particle{
+                            .acc = { 0.f, 0.f, 0.f },
+                            .mass = p.mass / 100.f,
+                            .temp = 300.f,
+                            .radius = p.radius / 6.f,
+
+                            .albedo = glm::vec3(clr(rng), clr(rng), clr(rng)),
+                            .emissionColor = p.emissionColor,
+                            .luminosity = 0.f,
+                            .specularity = 0.f,
+                            .metallicity = 1.f,
+                            .translucency = 0.f,
+                            .refractive_index = 1.f,
+                            .blurriness = 0.f
+                        };
+                        app->orbital_radius = p.radius * 5;
+                        ImGui::OpenPopup("Add satellite");
                     }
 
                     if (update) {
