@@ -89,6 +89,7 @@
     <None Include="shaders\bloom\display.glsl">
       <Filter>Resources\Shaders\Bloom</Filter>
     </None>
+    <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Headers">
