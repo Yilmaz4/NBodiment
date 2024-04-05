@@ -6955,6 +6955,7 @@ static void *stbi__load_gif_main_outofmem(stbi__gif *g, stbi_uc *out, int **dela
    return stbi__errpuc("outofmem", "Out of memory");
 }
 
+#pragma warning(disable:6262)
 static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y, int *z, int *comp, int req_comp)
 {
    if (stbi__gif_test(s)) {
@@ -7068,6 +7069,7 @@ static void *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, int req
 
    return u;
 }
+#pragma warning(default:6262)
 
 static int stbi__gif_info(stbi__context *s, int *x, int *y, int *comp)
 {
