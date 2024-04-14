@@ -19,8 +19,10 @@ struct Particle {
     float translucency;
     float refractive_index;
     float blurriness;
+
+    int textureid;
 };
-const int offset = 27;
+const int offset = 28;
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
@@ -36,7 +38,7 @@ Particle read(in int i) {
         vec3(vs[i + 12], vs[i + 13], vs[i + 14]),
         vec3(vs[i + 15], vs[i + 16], vs[i + 17]),
         vec3(vs[i + 18], vs[i + 19], vs[i + 20]),
-        vs[i + 21], vs[i + 22], vs[i + 23], vs[i + 24], vs[i + 25], vs[i + 26]
+        vs[i + 21], vs[i + 22], vs[i + 23], vs[i + 24], vs[i + 25], vs[i + 26], floatBitsToInt(vs[i + 27])
     );
 }
 
@@ -68,6 +70,7 @@ void write(in int i, in Particle p) {
     vs[i + 24] = p.translucency;
     vs[i + 25] = p.refractive_index;
     vs[i + 26] = p.blurriness;
+    vs[i + 27] = intBitsToFloat(p.textureid);
 }
 
 uniform float timeDelta;
