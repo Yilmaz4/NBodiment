@@ -1,17 +1,24 @@
-﻿#define VERSION "0.2"
+﻿#define VERSION "0.3"
 
+#ifndef _DEBUG
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+#endif
+#pragma warning(disable:26495)
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #define _USE_MATH_DEFINES
 #define NOMINMAX
+
+#include <Windows.h>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <imgui_internal.h>
 #include <stb/stb_image.h>
+#include <stb/stb_image_resize2.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -22,7 +29,6 @@
 #include <glm/gtx/vector_angle.hpp>
 #include <glm/gtx/string_cast.hpp>
 
-#include <Windows.h>
 #include <filesystem>
 #include <exception>
 #include <string>
@@ -33,6 +39,13 @@
 #include <bitset>
 #include <limits>
 #include <functional>
+#include <locale>
+#include <codecvt>
+
+void GLAPIENTRY glMessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) {
+    if (type != GL_DEBUG_TYPE_ERROR) return;
+    fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n", "** GL ERROR **", type, severity, message);
+}
 
 namespace ImGui {
     ImFont* font;
@@ -181,46 +194,6 @@ public:
     }
 };
 
-namespace phys {
-    constexpr glm::dmat3 xyz_to_rgb( // matrix to convert from CIE 1931 XYZ color space to sRGB
-         3.2404542, -1.5371385, -0.4985314,
-        -0.9692660,  1.8760108,  0.0415560,
-         0.0556434, -0.2040259,  1.0572252
-    );
-    constexpr double h = 6.62607015e+34; // planck's constant
-    constexpr double c = 299792458.0; // speed of light
-    constexpr double c_1 = 3.741771852e-16; // first radiation constant
-    constexpr double c_2 = 1.438776877e-02; // second radiation constant
-    constexpr double k_b = 1.380649e-23; // boltzmann constant
-    constexpr double b = 2.897771955e-3; // wien's displacement constant
-
-    // https://en.wikipedia.org/wiki/Planckian_locus#The_Planckian_locus_in_the_XYZ_color_space
-    static double M(double w, double t) { // black body spectral radiant exitance
-        return (2.0 * M_PI * h * pow(c, 2)) / (pow(w, 5) * (exp((h * c / k_b) / (w * t)) - 1));
-    }
-
-    // https://en.wikipedia.org/wiki/CIE_1931_color_space#Color_matching_functions
-    static double g(double x, double mu, double t_1, double t_2) {
-        return exp(-pow((x < mu) ? t_1 : t_2, 2) * pow(x - mu, 2) / 2.0);
-    }
-    static double x(double w) { return 1.056 * g(w, 599.8, 0.0264, 0.0323) + 0.362 * g(w, 442.0, 0.0624, 0.0374) - 0.065 * g(w, 501.1, 0.0490, 0.0382); }
-    static double y(double w) { return 0.821 * g(w, 568.8, 0.0218, 0.0247) + 0.286 * g(w, 530.9, 0.0613, 0.0322); }
-    static double z(double w) { return 1.217 * g(w, 437.0, 0.0845, 0.0278) + 0.681 * g(w, 459.0, 0.0385, 0.0725); }
-
-    static double coord(std::function<double(double)> func, double t) {
-        double out = 0;
-        for (double w = 300.0; w < 700.0; w++) {
-            out += func(w) * M(w, t);
-        }
-        return out;
-    }
-
-    static glm::dvec3 temperature_to_color(double t) {
-        glm::dvec3 xyz = { coord(x, t), coord(y, t), coord(z, t) };
-        return xyz;
-    }
-}
-
 #include "resource.h"
 
 class Shader {
@@ -264,11 +237,17 @@ protected:
 public:
     GLuint id;
 
-    static inline void load_textures(int tex) {
+    inline void load_textures(int tex) {
+        char buffer[MAX_PATH] = { 0 };
+        GetModuleFileNameA(NULL, buffer, MAX_PATH);
+        std::string::size_type pos = std::string(buffer).find_last_of("\\/");
+
         int width, height, nrChannels;
         unsigned char* data;
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, this->textureID);
         for (int i = 0; i < 6; i++) {
-            std::string path = std::format("assets\\{}{}.jpg", tex, i);
+            std::string path = std::format("{}\\assets\\{}{}.jpg", std::string(buffer).substr(0, pos), tex, i);
             data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
             if (!data) throw Error("Skybox not available");
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
@@ -435,7 +414,7 @@ public:
         glm::vec2 mipSize = screenSize;
         glm::ivec2 mipIntSize = static_cast<glm::ivec2>(screenSize);
 
-        for (unsigned int i = 0; i < mipChainLength; i++) {
+        for (int i = 0; i < mipChainLength; i++) {
             bloomMip mip;
 
             mip.size = mipSize;
@@ -502,7 +481,7 @@ public:
 
     inline void renderDownsamples(GLuint srcTexture, float threshold, int accumulationFrameIndex) {
         glUseProgram(dwsampleProgramID);
-        glUniform2f(glGetUniformLocation(dwsampleProgramID, "srcResolution"), screenSize.x, screenSize.y);
+        glUniform2f(glGetUniformLocation(dwsampleProgramID, "srcResolution"), static_cast<float>(screenSize.x), static_cast<float>(screenSize.y));
         glUniform1f(glGetUniformLocation(dwsampleProgramID, "threshold"), threshold);
         glUniform1i(glGetUniformLocation(dwsampleProgramID, "accumulationFrameIndex"), accumulationFrameIndex);
 
@@ -513,7 +492,7 @@ public:
 
         for (int i = 0; i < mMipChain.size(); i++) {
             const bloomMip& mip = mMipChain[i];
-            glViewport(0, 0, mip.size.x, mip.size.y);
+            glViewport(0, 0, static_cast<GLsizei>(mip.size.x), static_cast<GLsizei>(mip.size.y));
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
             glUniform1i(glGetUniformLocation(dwsampleProgramID, "depth"), i);
 
@@ -534,16 +513,16 @@ public:
 
         glBindVertexArray(vao);
 
-        for (int i = mMipChain.size() - 1; i > 0; i--) {
+        for (size_t i = mMipChain.size() - 1; i > 0; i--) {
             const bloomMip& mip = mMipChain[i];
             const bloomMip& nextMip = mMipChain[i - 1];
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, mip.texture);
 
-            glViewport(0, 0, nextMip.size.x, nextMip.size.y);
+            glViewport(0, 0, static_cast<GLsizei>(nextMip.size.x), static_cast<GLsizei>(nextMip.size.y));
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextMip.texture, 0);
-            glUniform1i(glGetUniformLocation(upsampleProgramID, "depth"), i);
+            glUniform1i(glGetUniformLocation(upsampleProgramID, "depth"), static_cast<GLint>(i));
 
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
@@ -675,7 +654,7 @@ public:
         }
         else {
             proximity += speed * dt * (keys[0] && !keys[2] ? -1.f : (keys[2] && !keys[0] ? 1.f : 0.f));
-            if (proximity < 1.2) proximity = 1.2;
+            if (proximity < 1.2f) proximity = 1.2f;
             rotate(0, 0);
             position = following->pos + localCoords;
         }
@@ -715,13 +694,13 @@ struct Scene {
     float max_density = 10e+9f;
     float min_temperature = 0.f;
     float max_temperature = 0.f;
-    float min_velocity = 0.f;
-    float max_velocity = 1.f;
+    float min_velocity = 0.5f;
+    float max_velocity = 1.0f;
 
     bool orbital_velocity = true;
     bool disk_only = false;
+    bool central_body = true;
 
-    bool central_particle = true;
     float central_mass = 1e+10f;
     float central_density = 1e+10f;
     float central_temperature = 3e+3;
@@ -772,12 +751,16 @@ public:
     double lastSpeedChange = -5.0;
     float timeStep = 1.0f;
     bool paused = false;
+    bool was_paused = false;
     bool reverse = false;
     int collisionType = 0;
 
+    std::vector<std::string> textures{ "None", "Add new texture..." };
+    GLuint textureArray;
+
     int hovering;
-    int selected;
-    int following;
+    int selected = -1;
+    int following = -1;
     bool hoveringParticle = false;
     bool selectedParticle = false;
     bool lockedToParticle = false;
@@ -797,30 +780,13 @@ public:
     glm::vec3 orbital_velocity;
     float orbital_period;
 
-    void load_texture(const char* path, unsigned int binding) {
-        int width, height, nrChannels;
-        unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
-        if (!data) throw Error("texture not found in assets");
-        GLuint texture;
-
-        glGenTextures(1, &texture);
-        glActiveTexture(GL_TEXTURE0 + binding);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        stbi_image_free(data);
-    }
-
     NBodiment() {
         std::setlocale(LC_CTYPE, ".UTF8");
 
         glfwInit();
 
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
         monitor = glfwGetPrimaryMonitor();
@@ -831,10 +797,15 @@ public:
         glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
         glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
         glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
-        glfwWindowHint(GLFW_SAMPLES, 4);
 
-        window = glfwCreateWindow(res.x, res.y, "N-Body Simulation", monitor, NULL);
-        if (window == nullptr) throw Error("Failed to create OpenGL context");
+#ifdef _DEBUG
+        res = { 1280, 850 };
+        window = glfwCreateWindow(res.x, res.y, "NBodiment", NULL, NULL);
+#else
+        window = glfwCreateWindow(res.x, res.y, "NBodiment", monitor, NULL);
+#endif
+        if (window == nullptr)
+            throw Error("Failed to create OpenGL context");
         glfwMakeContextCurrent(window);
         glfwSwapInterval(1);
         glfwSetWindowUserPointer(window, this);
@@ -842,8 +813,10 @@ public:
         if (glfwRawMouseMotionSupported()) glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         glfwGetCursorPos(window, &prevMousePos.x, &prevMousePos.y);
 
-        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) throw Error("Failed to load GLAD");
+        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
+            throw Error("Failed to load GLAD");
 
+        glEnable(GL_DEBUG_OUTPUT);
         glGenBuffers(1, &ssbo);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
@@ -864,21 +837,29 @@ public:
         glShaderStorageBlockBinding(shader->id, glGetProgramResourceIndex(shader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform3f(glGetUniformLocation(shader->id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
-        glUniform1i(glGetUniformLocation(shader->id, "numParticles"), pBuffer.size());
+        glUniform1i(glGetUniformLocation(shader->id, "numParticles"), static_cast<GLint>(pBuffer.size()));
         glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
         glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
 
-        glEnable(GL_MULTISAMPLE);
+        glActiveTexture(GL_TEXTURE3);
+        glGenTextures(1, &textureArray);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 4096, 2048, 16);
 
-        glGenTextures(1, &screenTexture);
         glActiveTexture(GL_TEXTURE0);
+        glGenTextures(1, &screenTexture);
         glBindTexture(GL_TEXTURE_2D, screenTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
+        glBindTexture(GL_TEXTURE_2D, NULL);
         
         glGenFramebuffers(1, &fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -907,16 +888,23 @@ public:
         io.LogFilename = NULL;
         ImGui::load_theme();
         ImGui_ImplGlfw_InitForOpenGL(window, true);
-        ImGui_ImplOpenGL3_Init("#version 430");
+        ImGui_ImplOpenGL3_Init("#version 460");
 
         camera = Camera();
     }
 
     static inline void on_windowResize(GLFWwindow* window, int w, int h) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
+
+        if (w == 0 && h == 0) {
+            app->was_paused = app->paused;
+            app->paused = true;
+            return;
+        } else app->paused = app->was_paused;
+
         app->res = { w, h };
         glViewport(0, 0, app->res.x, app->res.y);
-        glUniform2f(glGetUniformLocation(app->shader->id, "screenSize"), w, h);
+        glUniform2f(glGetUniformLocation(app->shader->id, "screenSize"), static_cast<float>(w), static_cast<float>(h));
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, app->screenTexture);
@@ -952,7 +940,7 @@ public:
                     glfwSetWindowMonitor(window, app->monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
                 }
                 else {
-                    app->res = { 600, 600 };
+                    app->res = { 1280, 850 };
                     glfwSetWindowMonitor(window, nullptr, app->pos.x, app->pos.y, app->res.x, app->res.y, 0);
                 }
             } if (key == app->controls.camctrl) {
@@ -987,6 +975,7 @@ public:
                     app->lockedToParticle = true;
                     app->following = app->selected;
                 }
+                app->accumulationFrameIndex = 0;
             } if (key == app->controls.toggleGI) {
                 app->globalIllumination ^= 1;
                 glUniform1i(glGetUniformLocation(app->shader->id, "globalIllumination"), app->globalIllumination);
@@ -1000,8 +989,8 @@ public:
     static inline void on_mouseMove(GLFWwindow* window, double x, double y) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
         if (app->camera.mouseLocked || (app->lockedToParticle && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)) {
-            float xoffset = x - app->prevMousePos.x;
-            float yoffset = app->prevMousePos.y - y;
+            float xoffset = static_cast<float>(x - app->prevMousePos.x);
+            float yoffset = static_cast<float>(app->prevMousePos.y - y);
             app->prevMousePos = { x, y };
 
             app->camera.rotate(xoffset, yoffset);
@@ -1071,23 +1060,25 @@ public:
         
         pBuffer.clear();
 
-        pBuffer.push_back(Particle({
-            .pos = glm::vec3(0.f),
-            .vel = glm::vec3(0.f),
-            .acc = glm::vec3(0.f),
-            .mass = scene.central_mass,
-            .temp = scene.central_temperature,
-            .radius = cbrt((3.f * (scene.central_mass / scene.central_density)) / (4.f * (float)(M_PI))),
+        if (scene.central_body) {
+            pBuffer.push_back(Particle({
+                .pos = glm::vec3(0.f),
+                .vel = glm::vec3(0.f),
+                .acc = glm::vec3(0.f),
+                .mass = scene.central_mass,
+                .temp = scene.central_temperature,
+                .radius = cbrt((3.f * (scene.central_mass / scene.central_density)) / (4.f * (float)(M_PI))),
 
-            .albedo = glm::vec3(0.f, 0.f, 0.f),
-            .emissionColor = glm::vec3(1.f, 1.f, 1.f),
-            .luminosity = scene.central_luminosity,
-            .specularity = 0.f,
-            .metallicity = 1.f,
-            .translucency = 0.f,
-            .refractive_index = 1.f,
-            .blurriness = 0.f
-        }));
+                .albedo = glm::vec3(0.f, 0.f, 0.f),
+                .emissionColor = glm::vec3(1.f, 1.f, 1.f),
+                .luminosity = scene.central_luminosity,
+                .specularity = 0.f,
+                .metallicity = 1.f,
+                .translucency = 0.f,
+                .refractive_index = 1.f,
+                .blurriness = 0.f
+            }));
+        }
         int tries = 0;
         for (int i = 0; i < scene.num_particles; i++) {
             float m = mass(rng);
@@ -1098,7 +1089,9 @@ public:
             p = glm::normalize(p) * pos(rng);
 
             bool abort_flag = false;
-            for (int j = 0; j <= i; j++) if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r) abort_flag = true;
+            for (int j = 0; pBuffer.size() != 0 && j < i + static_cast<int>(scene.central_body); j++)
+                if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r)
+                    abort_flag = true;
             if (abort_flag && tries < 100) {
                 i -= 1;
                 tries += 1;
@@ -1107,7 +1100,7 @@ public:
             tries = 0;
 
             glm::vec3 v{};
-            if (scene.orbital_velocity) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (scene.central_mass + m) / glm::length(p));
+            if (scene.orbital_velocity && scene.central_body) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (scene.central_mass + m) / glm::length(p));
             else v = glm::normalize(glm::vec3(unit_vec(rng), !scene.disk_only * unit_vec(rng), unit_vec(rng))) * vel(rng);
 
             glm::vec3 c = { clr(rng), clr(rng), clr(rng) };
@@ -1136,8 +1129,400 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(pBuffer.data()), GL_DYNAMIC_DRAW);
-        glUniform1i(glGetUniformLocation(shader->id, "numParticles"), pBuffer.size());
+        glUniform1i(glGetUniformLocation(shader->id, "numParticles"), static_cast<GLint>(pBuffer.size()));
         accumulationFrameIndex = 0;
+    }
+
+
+    ImVec2 renderSettingsUI(double fps, double currentTime, double lastFrame) {
+        ImGui::PushFont(ImGui::font);
+        ImGui::SetNextWindowPos({ 10.f, 10.f });
+        if (ImGui::Begin("Settings", nullptr,
+            ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoScrollWithMouse |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoMove
+        )) {
+            ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1e+3 * (currentTime - lastFrame));
+            if (ImGui::Button("About"))
+                ImGui::OpenPopup("About NBodiment");
+            if (ImGui::BeginPopupModal("About NBodiment", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+                ImGui::Text("Version v" VERSION " (Build date: " __DATE__ " " __TIME__ ")\n\nNBodiment is a gravitational N-body simulator with\nray-tracing and rigid body physics.");
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 150, 150, 255));
+                ImGui::Text(u8"Copyright © 2017-2024 Yilmaz Alpaslan");
+                ImGui::PopStyleColor();
+                if (ImGui::Button("Open GitHub Page"))
+                    ShellExecuteW(0, 0, L"https://github.com/Yilmaz4/NBodiment", 0, 0, SW_SHOW);
+                ImGui::SameLine();
+                if (ImGui::Button("Close"))
+                    ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Exit"))
+                glfwTerminate();
+            ImGui::SeparatorText("Simulation");
+            if (ImGui::Button(paused ? "Resume" : "Pause"))
+                paused ^= 1;
+            ImGui::SameLine();
+            if (ImGui::Button("Reverse"))
+                reverse ^= 1;
+            ImGui::SliderFloat("Time step", &timeStep, FLT_MIN, 100.f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+            ImGui::SameLine();
+            ImGui::HelpMarker("Higher values speed up the simulation while decreasing accuracy.");
+
+            const char* types[] = { "Elastic", "Inelastic", "No collision" };
+            const char* preview = types[collisionType];
+
+            if (ImGui::BeginCombo("Collision type", preview)) {
+                for (int n = 0; n < 3; n++) {
+                    const bool is_selected = (collisionType == n);
+                    if (ImGui::Selectable(types[n], is_selected)) {
+                        collisionType = n;
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
+
+            ImGui::SeparatorText("Environment");
+            if (ImGui::ColorEdit3("Ambient light", &ambientLight[0])) {
+                glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
+                accumulationFrameIndex = 0;
+            }
+            const char* images[] = { "Milky Way", "Sorsele", "Mountains" };
+            preview = images[skyboxImage];
+
+            if (ImGui::BeginCombo("Skybox", preview)) {
+                for (int n = 0; n < 3; n++) {
+                    const bool is_selected = (skyboxImage == n);
+                    if (ImGui::Selectable(images[n], is_selected)) {
+                        skyboxImage = n;
+                        shader->load_textures(n);
+                        accumulationFrameIndex = 0;
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SeparatorText("Graphics");
+            if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
+                glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
+            }
+            if (globalIllumination) {
+                ImGui::SameLine();
+                if (ImGui::Button("Reset accumulation"))
+                    accumulationFrameIndex = 0;
+                if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
+                    glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
+            } else {
+                ImGui::SameLine();
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.f);
+                ImGui::HelpMarker("Global illumination, or path tracing, is a computer algorithm to produce physically based and realistic-looking 3D scenes by simulating the very nature of light, which causes optical effects like reflection, refraction and soft shadows to naturally emerge instead of having to be explicitly implemented.\n\nPause the simulation to start accumulating samples in order to address noise.");
+            }
+            ImGui::ToggleButton("Bloom", &bloom);
+            if (!globalIllumination) {
+                ImGui::SameLine();
+                if (ImGui::ToggleButton("Shadows", &shadows))
+                    glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
+            }
+            if (bloom) {
+                ImGui::DragFloat("Bloom threshold", &bloomThreshold, std::max(bloomThreshold / 20, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
+                ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
+            }
+
+            ImGui::SeparatorText("Camera");
+            if (ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX))
+                accumulationFrameIndex = 0;
+            if (ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g"))
+                accumulationFrameIndex = 0;
+            ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
+        }
+        ImGui::PopFont();
+        ImVec2 settingsSize = ImGui::GetWindowSize();
+        ImGui::End();
+        return settingsSize;
+    }
+
+    ImVec2 renderSceneUI(ImVec2 settingsSize) {
+        ImGui::PushFont(ImGui::font);
+        ImGui::SetNextWindowPos({ 10.f, settingsSize.y + 20.f });
+        ImGui::SetNextWindowSize(ImVec2(settingsSize.x, 0.f));
+        if (ImGui::Begin("Scene Generator", nullptr,
+            ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoScrollWithMouse |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoMove
+        )) {
+            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 10000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+            ImGui::PushItemWidth(100);
+            ImGui::SeparatorText("Distance");
+            ImGui::DragFloat("Min##distance", &scene.min_distance, scene.min_distance / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_distance), "%.9g m", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+            ImGui::DragFloat("Max##distance", &scene.max_distance, scene.max_distance / 20.f, std::max(FLT_MIN, scene.min_distance), FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SeparatorText("Mass");
+            ImGui::DragFloat("Min##mass", &scene.min_mass, scene.min_mass / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_mass), "%.9g kg", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+            ImGui::DragFloat("Max##mass", &scene.max_mass, scene.max_mass / 20.f, std::max(FLT_MIN, scene.min_mass), FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SeparatorText("Density");
+            ImGui::DragFloat("Min##density", &scene.min_density, scene.min_density / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_density), "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+            ImGui::DragFloat("Max##density", &scene.max_density, scene.max_density / 20.f, std::max(FLT_MIN, scene.min_density), FLT_MAX, "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SeparatorText("Velocity");
+            if (scene.central_body)
+                ImGui::Checkbox("Automatic Orbital Velocity", &scene.orbital_velocity);
+            if (!scene.orbital_velocity || !scene.central_body) {
+                ImGui::DragFloat("Min##velocity", &scene.min_velocity, scene.min_velocity / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
+                ImGui::DragFloat("Max##velocity", &scene.max_velocity, scene.max_velocity / 20.f, std::max(FLT_MIN, scene.min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
+            }
+            ImGui::Checkbox("No vertical component", &scene.disk_only);
+            ImGui::SameLine();
+            ImGui::HelpMarker("Particles will be placed on a horizontal plane only.");
+            ImGui::PopItemWidth();
+            ImGui::Checkbox("Central body", &scene.central_body);
+            if (scene.central_body) {
+                ImGui::DragFloat("Mass", &scene.central_mass, scene.central_mass / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                ImGui::DragFloat("Density", &scene.central_density, scene.central_density / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+                ImGui::DragFloat("Emission strength", &scene.central_luminosity, std::max(scene.central_luminosity / 20.f, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_AlwaysClamp);
+            }
+            ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal, 3.f);
+
+            if (ImGui::Button("Generate", ImVec2(100, 0))) generate_scene();
+        }
+        ImGui::PopFont();
+        ImVec2 sceneGenSize = ImGui::GetWindowSize();
+        ImGui::End();
+        return sceneGenSize;
+    }
+
+    ImVec2 renderParticleConfigUI(int idx, ImVec2 size, ImVec2 pos, const char* title) {
+        ImGui::PushFont(ImGui::font);
+        ImGui::SetNextWindowPos(pos);
+        ImGui::SetNextWindowSize(size);
+        ImGui::Begin(title, nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoMove
+        );
+        Particle p = pBuffer[idx];
+
+        if (ImGui::BeginPopupModal("Add satellite", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+            glm::vec3& v = orbital_velocity;
+            float& r = orbital_radius;
+            float& t = orbital_period;
+
+            constexpr float PI = static_cast<float>(M_PI);
+
+            satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
+            r = glm::length(satellite.pos - p.pos);
+            v = glm::cross(glm::normalize(satellite.pos - p.pos), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (p.mass + satellite.mass) / r);
+            t = 2.f * PI * r / glm::length(v);
+
+            ImGui::DragFloat("Mass", &satellite.mass, (satellite.mass / 10.f), FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::DragFloat("Temperature", &satellite.temp, (satellite.temp / 10.f), FLT_MIN, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::DragFloat("Radius", &satellite.radius, (satellite.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SeparatorText("Motion");
+            if (ImGui::DragFloat("Orbital Period", &t, (t / 10.f), 2.f * PI * (p.radius + satellite.radius) / glm::length(v), FLT_MAX, "%.9g s", ImGuiSliderFlags_AlwaysClamp)) {
+                r = glm::length(v) * t / (2.f * PI);
+                satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
+                v = glm::normalize(v) * static_cast<float>(2.f * PI * r / glm::length(t));
+            }
+            if (ImGui::DragFloat("Orbital Radius", &r, (r / 10.f), p.radius + satellite.radius, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp)) {
+                satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
+                v = glm::cross(glm::normalize(satellite.pos - p.pos), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (p.mass + satellite.mass) / r);
+                t = 2.f * PI * r / glm::length(v);
+            }
+            if (ImGui::Button("Add")) {
+                satellite.vel = p.vel + v;
+                pBuffer.push_back(satellite);
+                original.push_back(satellite);
+
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+                glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(pBuffer.data()), GL_DYNAMIC_DRAW);
+                glUniform1i(glGetUniformLocation(shader->id, "numParticles"), static_cast<GLint>(pBuffer.size()));
+                accumulationFrameIndex = 0;
+
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
+        bool update = false;
+        float velocity = glm::length(p.vel);
+        update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.01f);
+        if (update |= ImGui::DragFloat("Velocity", &velocity, (velocity / 10), FLT_MIN, FLT_MAX, "%.3g m/s", ImGuiSliderFlags_AlwaysClamp)) {
+            p.vel = glm::normalize(p.vel) * velocity;
+        }
+        update |= ImGui::DragFloat("Mass", &p.mass, (p.mass / 10.f), FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
+        update |= ImGui::DragFloat("Temperature", &p.temp, (p.temp / 10.f), FLT_MIN, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+        update |= ImGui::DragFloat("Radius", &p.radius, (p.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SeparatorText("Appearance");
+
+        const std::string preview = textures[p.texture];
+        if (ImGui::BeginCombo("Texture", preview.c_str())) {
+            for (int i = 0; i < std::min(textures.size(), 17ull); i++) {
+                const bool is_selected = (p.texture == i);
+                if (ImGui::Selectable(textures[i].c_str(), is_selected)) {
+                    if (i == textures.size() - 1) {
+                        OPENFILENAMEA ofn;
+                        char szFileName[MAX_PATH];
+                        char szFileTitle[MAX_PATH];
+
+                        *szFileName = 0;
+                        *szFileTitle = 0;
+
+                        ofn.lStructSize = sizeof(OPENFILENAME);
+                        ofn.hwndOwner = GetFocus();
+                        ofn.lpstrFilter = "JPEG (*.jpg)\0*.jpg\0PNG (*.png)\0*.png\0All Files (*.*)\0*.*\0";
+                        ofn.lpstrCustomFilter = NULL;
+                        ofn.nMaxCustFilter = 0;
+                        ofn.nFilterIndex = 0;
+                        ofn.lpstrFile = szFileName;
+                        ofn.nMaxFile = MAX_PATH;
+                        ofn.lpstrInitialDir = ".";
+                        ofn.lpstrFileTitle = szFileTitle;
+                        ofn.nMaxFileTitle = MAX_PATH;
+                        ofn.lpstrTitle = "Select spherical texture...";
+                        ofn.lpstrDefExt = "*.jpg";
+
+                        ofn.Flags = OFN_FILEMUSTEXIST;
+
+                        if (!GetOpenFileNameA(reinterpret_cast<LPOPENFILENAMEA>(&ofn))) {
+                            glfwRestoreWindow(window);
+                            continue;
+                        }
+
+                        int w, h, nrChannels;
+                        unsigned char* data = stbi_load(ofn.lpstrFile, &w, &h, &nrChannels, 0);
+
+                        if (!data) throw Error("Failed to load texture");
+
+                        unsigned char* textureBuffer = stbir_resize_uint8_linear(data, w, h, NULL, nullptr, 4096, 2048, NULL, static_cast<stbir_pixel_layout>(nrChannels));
+
+                        glActiveTexture(GL_TEXTURE3);
+                        glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);
+                        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i - 1, 4096, 2048, 1, GL_RGB, GL_UNSIGNED_BYTE, textureBuffer);
+
+                        glDebugMessageCallback(glMessageCallback, 0);
+
+                        free(data);
+                        free(textureBuffer);
+                        textures.insert(textures.begin() + i, ofn.lpstrFileTitle);
+                        glfwRestoreWindow(window);
+                    }
+                    p.texture = i;
+                    update = true;
+                    accumulationFrameIndex = 0;
+                }
+                if (is_selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        if (p.texture == 0) {
+            update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
+            ImGui::SameLine(); ImGui::HelpMarker("Proportion of the incident light that is reflected by the surface.");
+        } else {
+            GLuint textureViews[16];
+            glGenTextures(16, textureViews);
+            for (int i = 0; i < 16; i++) {
+                glTextureView(textureViews[i], GL_TEXTURE_2D, textureArray, GL_RGB8, 0, 1, i, 1);
+            }
+            ImGui::Image(reinterpret_cast<void*>(textureViews[p.texture - 1]), ImVec2(290, 145));
+        }
+        update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
+        update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.2f, FLT_MIN, FLT_MAX);
+        if (p.texture == 0) {
+            update |= ImGui::SliderFloat("Specularity", &p.specularity, 0.f, 1.f);
+            ImGui::SameLine(); ImGui::HelpMarker("Measure of how microscopically smooth the surface is, which affects how uniformly it reflects incident light.");
+            if ((update |= ImGui::SliderFloat("Metallicity", &p.metallicity, 0.f, 1.f)) && p.metallicity > 1.f - p.translucency)
+                p.metallicity = 1.f - p.translucency;
+            ImGui::SameLine(); ImGui::HelpMarker("Measure of how much of incoming light is reflected.");
+            if ((update |= ImGui::SliderFloat("Translucency", &p.translucency, 0.f, 1.f)) && p.translucency > 1.f - p.metallicity)
+                p.translucency = 1.f - p.metallicity;
+            update |= ImGui::ColorEdit3("Absorption Color", glm::value_ptr(p.absorptionColor));
+            update |= ImGui::SliderFloat("Refractive index", &p.refractive_index, 1.f, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+            ImGui::SameLine(); ImGui::HelpMarker("Ratio of the speed of light in a vacuum to the speed of light inside the material.\nAir: 1.0003, Water: 1.33, Glass: 1.52, Diamond: 2.41");
+            update |= ImGui::SliderFloat("Blurriness", &p.blurriness, 0.f, 1.f);
+        }
+
+        ImGui::SeparatorText("Actions");
+        if (!(lockedToParticle && following == idx) && ImGui::Button("Follow")) {
+            lockedToParticle = true;
+            following = idx;
+            accumulationFrameIndex = 0;
+        }
+        else if (lockedToParticle && following == idx && ImGui::Button("Unfollow")) {
+            lockedToParticle = false;
+            camera.direction = -camera.localCoords;
+            camera.yaw -= 180;
+            camera.pitch = -camera.pitch;
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Delete")) {
+            p.mass = 0.f;
+            p.radius = 0.f;
+            if (lockedToParticle && following == idx) {
+                lockedToParticle = false;
+                camera.direction = -camera.localCoords;
+                camera.yaw -= 180;
+                camera.pitch = -camera.pitch;
+            }
+            selectedParticle = false;
+            update = true;
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) {
+            Particle q = original[idx];
+            q.pos = p.pos;
+            q.vel = p.vel;
+            q.acc = p.acc;
+            p = q;
+            update = true;
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Add sattelite")) {
+            std::random_device rd;
+            std::mt19937 rng(rd());
+            std::uniform_real_distribution<float> clr(0.f, 1.f);
+
+            auto color = glm::vec3(clr(rng), clr(rng), clr(rng));
+            satellite = Particle{
+                .acc = { 0.f, 0.f, 0.f },
+                .mass = p.mass / 100.f,
+                .temp = 300.f,
+                .radius = p.radius / 6.f,
+
+                .albedo = color,
+                .emissionColor = color,
+                .luminosity = 0.f,
+                .specularity = 0.f,
+                .metallicity = 1.f,
+                .translucency = 0.f,
+                .refractive_index = 1.f,
+                .blurriness = 0.f
+            };
+            orbital_radius = p.radius * 3;
+            ImGui::OpenPopup("Add satellite");
+        }
+
+        if (update) {
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(idx * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
+            accumulationFrameIndex = 0;
+        }
+        ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
+        ImGui::PopFont();
+        ImVec2 particleConfigSize = ImGui::GetWindowSize();
+        ImGui::End();
+        return particleConfigSize;
     }
 
     void mainloop() {
@@ -1215,321 +1600,18 @@ public:
             ImGui::NewFrame();
             ImVec2 settingsSize;
             ImVec2 sceneGenSize;
+
             if (!camera.mouseLocked) {
-                ImGui::PushFont(ImGui::font);
-                ImGui::SetNextWindowPos({ 10.f, 10.f });
-                if (ImGui::Begin("Settings", nullptr,
-                    ImGuiWindowFlags_NoScrollbar |
-                    ImGuiWindowFlags_NoScrollWithMouse |
-                    ImGuiWindowFlags_AlwaysAutoResize |
-                    ImGuiWindowFlags_NoMove
-                )) {
-                    ImGui::Text("FPS: %.3g   Frametime: %.3g ms", fps, 1e+3 * (currentTime - lastFrame));
-                    if (ImGui::Button("About"))
-                        ImGui::OpenPopup("About NBodiment");
-                    if (ImGui::BeginPopupModal("About NBodiment", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
-                        ImGui::Text("Version v" VERSION " (Build date: " __DATE__ " " __TIME__ ")\n\nNBodiment is a gravitational N-body simulator with\nray-tracing and rigid body physics.");
-                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 150, 150, 255));
-                        ImGui::Text(u8"Copyright © 2017-2024 Yilmaz Alpaslan");
-                        ImGui::PopStyleColor();
-                        if (ImGui::Button("Open GitHub Page"))
-                            ShellExecuteW(0, 0, L"https://github.com/Yilmaz4/NBodiment", 0, 0, SW_SHOW);
-                        ImGui::SameLine();
-                        if (ImGui::Button("Close"))
-                            ImGui::CloseCurrentPopup();
-                        ImGui::EndPopup();
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Check for updates")) {
-                        // not yet implemented
-                    }
-                    ImGui::SeparatorText("Simulation");
-                    if (ImGui::Button(paused ? "Resume" : "Pause"))
-                        paused ^= 1;
-                    ImGui::SameLine();
-                    if (ImGui::Button("Reverse"))
-                        reverse ^= 1;
-                    ImGui::SliderFloat("Time step", &timeStep, FLT_MIN, 100.f, "%.9g seconds", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
-                    ImGui::SameLine();
-                    ImGui::HelpMarker("Higher values speed up the simulation while decreasing accuracy.");
-
-                    const char* types[] = { "Elastic", "Inelastic", "No collision"};
-                    const char* preview = types[collisionType];
-
-                    if (ImGui::BeginCombo("Collision type", preview)) {
-                        for (int n = 0; n < 3; n++) {
-                            const bool is_selected = (collisionType == n);
-                            if (ImGui::Selectable(types[n], is_selected)) {
-                                collisionType = n;
-                            }
-                            if (is_selected) ImGui::SetItemDefaultFocus();
-                        }
-                        ImGui::EndCombo();
-                    }
-                    ImGui::SameLine();
-                    ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
-
-                    ImGui::SeparatorText("Environment");
-                    if (ImGui::ColorEdit3("Ambient light", &ambientLight[0])) {
-                        glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
-                        accumulationFrameIndex = 0;
-                    }
-                    const char* images[] = { "Milky Way", "Sorsele", "Mountains" };
-                    preview = images[skyboxImage];
-
-                    if (ImGui::BeginCombo("Skybox", preview)) {
-                        for (int n = 0; n < 3; n++) {
-                            const bool is_selected = (skyboxImage == n);
-                            if (ImGui::Selectable(images[n], is_selected)) {
-                                skyboxImage = n;
-                                shader->load_textures(n);
-                                accumulationFrameIndex = 0;
-                            }
-                            if (is_selected) ImGui::SetItemDefaultFocus();
-                        }
-                        ImGui::EndCombo();
-                    }
-                    ImGui::SeparatorText("Graphics");
-                    if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
-                        glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
-                    }
-                    if (globalIllumination) {
-                        ImGui::SameLine();
-                        if (ImGui::Button("Reset accumulation"))
-                            accumulationFrameIndex = 0;
-                        if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
-                            glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
-                    }
-                    else {
-                        ImGui::SameLine();
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.f);
-                        ImGui::HelpMarker("Global illumination, or path tracing, is a computer algorithm to produce physically based and realistic-looking 3D scenes by simulating the very nature of light, which causes optical effects like reflection, refraction and soft shadows to naturally emerge instead of having to be explicitly implemented.\n\nPause the simulation to start accumulating samples in order to address noise.");
-                    }
-                    ImGui::ToggleButton("Bloom", &bloom);
-                    if (!globalIllumination) {
-                        ImGui::SameLine();
-                        if (ImGui::ToggleButton("Shadows", &shadows))
-                            glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
-                    }
-                    if (bloom) {
-                        ImGui::DragFloat("Bloom threshold", &bloomThreshold, std::max(bloomThreshold / 20, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
-                        ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
-                    }
-                    
-                    ImGui::SeparatorText("Camera");
-                    if (ImGui::DragFloat3("Position", glm::value_ptr(camera.position), 0.1f, -FLT_MAX, FLT_MAX))
-                        accumulationFrameIndex = 0;
-                    if (ImGui::SliderFloat("FOV", &camera.fov, 1, 100, "%.3g"))
-                        accumulationFrameIndex = 0;
-                    ImGui::SliderFloat("Sensitivity", &camera.sensitivity, 0.01f, 0.2f, "%.5g");
-                }
-                ImGui::PopFont();
-                settingsSize = ImGui::GetWindowSize();
-                ImGui::End();
-
-                ImGui::PushFont(ImGui::font);
-                ImGui::SetNextWindowPos({ 10.f, settingsSize.y + 20.f });
-                ImGui::SetNextWindowSize(ImVec2(settingsSize.x, 0.f));
-                if (ImGui::Begin("Scene Generator", nullptr,
-                    ImGuiWindowFlags_NoScrollbar |
-                    ImGuiWindowFlags_NoScrollWithMouse |
-                    ImGuiWindowFlags_AlwaysAutoResize |
-                    ImGuiWindowFlags_NoMove
-                )) {
-                    ImGui::SliderInt("# Particles", &scene.num_particles, 0, 1e+4, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
-                    ImGui::PushItemWidth(100);
-                    ImGui::SeparatorText("Distance");
-                    ImGui::DragFloat("Min##distance", &scene.min_distance, scene.min_distance / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_distance), "%.9g m", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##distance", &scene.max_distance, scene.max_distance / 20.f, std::max(FLT_MIN, scene.min_distance), FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SeparatorText("Mass");
-                    ImGui::DragFloat("Min##mass", &scene.min_mass, scene.min_mass / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_mass), "%.9g kg", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##mass", &scene.max_mass, scene.max_mass / 20.f, std::max(FLT_MIN, scene.min_mass), FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SeparatorText("Density");
-                    ImGui::DragFloat("Min##density", &scene.min_density, scene.min_density / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_density), "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                    ImGui::DragFloat("Max##density", &scene.max_density, scene.max_density / 20.f, std::max(FLT_MIN, scene.min_density), FLT_MAX, "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SeparatorText("Velocity");
-                    ImGui::Checkbox("Automatic Orbital Velocity", &scene.orbital_velocity);
-                    if (!scene.orbital_velocity) {
-                        ImGui::DragFloat("Min##velocity", &scene.min_velocity, std::max(scene.min_velocity / 20.f, 1e-9f), 0.f, std::min(FLT_MAX, scene.max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                        ImGui::DragFloat("Max##velocity", &scene.max_velocity, std::max(scene.max_velocity / 20.f, 1e-9f), std::max(0.f, scene.min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
-                    }
-                    ImGui::Checkbox("No vertical component", &scene.disk_only);
-                    ImGui::SameLine();
-                    ImGui::HelpMarker("Particles will be placed on a horizontal plane only.");
-                    ImGui::PopItemWidth();
-                    ImGui::SeparatorText("Central body");
-                    ImGui::DragFloat("Mass", &scene.central_mass, scene.central_mass / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::DragFloat("Density", &scene.central_density, scene.central_density / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::DragFloat("Emission strength", &scene.central_luminosity, std::max(scene.central_luminosity / 20.f, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal, 3.f);
-                    
-                    if (ImGui::Button("Generate", ImVec2(100, 0))) generate_scene();
-                }
-                ImGui::PopFont();
-                sceneGenSize = ImGui::GetWindowSize();
-                ImGui::End();
-
-                auto particleConfig = [](NBodiment* app, int idx, ImVec2 size, ImVec2 pos, const char* title) {
-                    ImGui::PushFont(ImGui::font);
-                    ImGui::SetNextWindowPos(pos);
-                    ImGui::SetNextWindowSize(size);
-                    ImGui::Begin(title, nullptr,
-                        ImGuiWindowFlags_AlwaysAutoResize |
-                        ImGuiWindowFlags_NoMove
-                    );
-                    Particle p = app->pBuffer[idx];
-
-                    if (ImGui::BeginPopupModal("Add satellite", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
-                        glm::vec3& v = app->orbital_velocity;
-                        float& r = app->orbital_radius;
-                        float& t = app->orbital_period;
-
-                        app->satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
-                        r = glm::length(app->satellite.pos - p.pos);
-                        v = glm::cross(glm::normalize(app->satellite.pos - p.pos), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (p.mass + app->satellite.mass) / r);
-                        t = 2.f * M_PI * r / glm::length(v);
-
-                        ImGui::DragFloat("Mass", &app->satellite.mass, (app->satellite.mass / 10.f), FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::DragFloat("Temperature", &app->satellite.temp, (app->satellite.temp / 10.f), FLT_MIN, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::DragFloat("Radius", &app->satellite.radius, (app->satellite.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::SeparatorText("Motion");
-                        if (ImGui::DragFloat("Orbital Period", &t, (t / 10.f), 2.f * M_PI * (p.radius + app->satellite.radius) / glm::length(v), FLT_MAX, "%.9g s", ImGuiSliderFlags_AlwaysClamp)) {
-                            r = glm::length(v) * t / (2.f * M_PI);
-                            app->satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
-                            v = glm::normalize(v) * static_cast<float>(2.f * M_PI * r / glm::length(t));
-                        }
-                        if (ImGui::DragFloat("Orbital Radius", &r, (r / 10.f), p.radius + app->satellite.radius, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp)) {
-                            app->satellite.pos = p.pos + glm::vec3(r, 0.f, 0.f);
-                            v = glm::cross(glm::normalize(app->satellite.pos - p.pos), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (p.mass + app->satellite.mass) / r);
-                            t = 2.f * M_PI * r / glm::length(v);
-                        }
-                        if (ImGui::Button("Add")) {
-                            app->satellite.vel = p.vel + v;
-                            app->pBuffer.push_back(app->satellite);
-                            app->original.push_back(app->satellite);
-
-                            glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
-                            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                            glBufferData(GL_SHADER_STORAGE_BUFFER, app->pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(app->pBuffer.data()), GL_DYNAMIC_DRAW);
-                            glUniform1i(glGetUniformLocation(app->shader->id, "numParticles"), app->pBuffer.size());
-                            app->accumulationFrameIndex = 0;
-                            ImGui::CloseCurrentPopup();
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button("Cancel")) {
-                            ImGui::CloseCurrentPopup();
-                        }
-                        ImGui::EndPopup();
-                    }
-
-                    bool update = false;
-                    float velocity = glm::length(p.vel);
-                    update |= ImGui::DragFloat3("Position", glm::value_ptr(p.pos), 0.01f);
-                    if (update |= ImGui::DragFloat("Velocity", &velocity, (velocity / 10), FLT_MIN, FLT_MAX, "%.3g m/s", ImGuiSliderFlags_AlwaysClamp)) {
-                        p.vel = glm::normalize(p.vel) * velocity;
-                    }
-                    update |= ImGui::DragFloat("Mass", &p.mass, (p.mass / 10.f), FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-                    update |= ImGui::DragFloat("Temperature", &p.temp, (p.temp / 10.f), FLT_MIN, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
-                    update |= ImGui::DragFloat("Radius", &p.radius, (p.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SeparatorText("Appearance");
-                    update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
-                    ImGui::SameLine(); ImGui::HelpMarker("Proportion of the incident light that is reflected by the surface.");
-                    update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
-                    update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.5f, FLT_MIN, FLT_MAX);
-                    update |= ImGui::SliderFloat("Specularity", &p.specularity, 0.f, 1.f);
-                    ImGui::SameLine(); ImGui::HelpMarker("Measure of how microscopically smooth the surface is, which affects how uniformly it reflects incident light.");
-                    if ((update |= ImGui::SliderFloat("Metallicity", &p.metallicity, 0.f, 1.f)) && p.metallicity > 1.f - p.translucency)
-                        p.metallicity = 1.f - p.translucency;
-                    ImGui::SameLine(); ImGui::HelpMarker("Measure of how much of incoming light is reflected.");
-                    if ((update |= ImGui::SliderFloat("Translucency", &p.translucency, 0.f, 1.f)) && p.translucency > 1.f - p.metallicity)
-                        p.translucency = 1.f - p.metallicity;
-                    update |= ImGui::ColorEdit3("Absorption Color", glm::value_ptr(p.absorptionColor));
-                    update |= ImGui::SliderFloat("Refractive index", &p.refractive_index, 1.f, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
-                    ImGui::SameLine(); ImGui::HelpMarker("Ratio of the speed of light in a vacuum to the speed of light inside the material.\nAir: 1.0003, Water: 1.33, Glass: 1.52, Diamond: 2.41");
-                    update |= ImGui::SliderFloat("Blurriness", &p.blurriness, 0.f, 1.f);
-                    ImGui::SeparatorText("Actions");
-                    if (!(app->lockedToParticle && app->following == idx) && ImGui::Button("Follow")) {
-                        app->lockedToParticle = true;
-                        app->following = idx;
-                        app->accumulationFrameIndex = 0;
-                    }
-                    else if (app->lockedToParticle && app->following == idx && ImGui::Button("Unfollow")) {
-                        app->lockedToParticle = false;
-                        app->camera.direction = -app->camera.localCoords;
-                        app->camera.yaw -= 180;
-                        app->camera.pitch = -app->camera.pitch;
-                    }
-
-                    ImGui::SameLine();
-                    if (ImGui::Button("Delete")) {
-                        p.mass = 0.f;
-                        p.radius = 0.f;
-                        if (app->lockedToParticle && app->following == idx) {
-                            app->lockedToParticle = false;
-                            app->camera.direction = -app->camera.localCoords;
-                            app->camera.yaw -= 180;
-                            app->camera.pitch = -app->camera.pitch;
-                        }
-                        app->selectedParticle = false;
-                        update = true;
-                    }
-
-                    ImGui::SameLine();
-                    if (ImGui::Button("Reset")) {
-                        Particle q = app->original[idx];
-                        q.pos = p.pos;
-                        q.vel = p.vel;
-                        q.acc = p.acc;
-                        p = q;
-                        update = true;
-                    }
-                    
-                    ImGui::SameLine();
-                    if (ImGui::Button("Add sattelite")) {
-                        std::random_device rd;
-                        std::mt19937 rng(rd());
-                        std::uniform_real_distribution<float> clr(0.f, 1.f);
-
-                        app->satellite = Particle{
-                            .acc = { 0.f, 0.f, 0.f },
-                            .mass = p.mass / 100.f,
-                            .temp = 300.f,
-                            .radius = p.radius / 6.f,
-
-                            .albedo = glm::vec3(clr(rng), clr(rng), clr(rng)),
-                            .emissionColor = p.emissionColor,
-                            .luminosity = 0.f,
-                            .specularity = 0.f,
-                            .metallicity = 1.f,
-                            .translucency = 0.f,
-                            .refractive_index = 1.f,
-                            .blurriness = 0.f
-                        };
-                        app->orbital_radius = p.radius * 5;
-                        ImGui::OpenPopup("Add satellite");
-                    }
-
-                    if (update) {
-                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, app->ssbo);
-                        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                        glBufferSubData(GL_SHADER_STORAGE_BUFFER, static_cast<GLintptr>(idx * sizeof(Particle)), sizeof(Particle), reinterpret_cast<float*>(&p));
-                        app->accumulationFrameIndex = 0;
-                    }
-                    ImGui::SetWindowPos({ app->res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
-                    ImGui::PopFont();
-                    float height = ImGui::GetWindowSize().y;
-                    ImGui::End();
-                    return height;
-                };
+                settingsSize = renderSettingsUI(fps, currentTime, lastFrame);
+                sceneGenSize = renderSceneUI(settingsSize);
 
                 float fpconfigH = 0;
                 if (lockedToParticle) {
-                    fpconfigH = particleConfig(this, following, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f), "Following particle");
+                    fpconfigH = renderParticleConfigUI(following, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f), "Following particle").y;
                 }
                 if (selectedParticle && (!lockedToParticle || following != selected)) {
-                    particleConfig(this, selected, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f + fpconfigH + (fpconfigH ? 10.f : 0.f)), "Selected particle");
+                    renderParticleConfigUI(selected, ImVec2(settingsSize.x, 0.f), ImVec2(res.x - settingsSize.x - 10.f, 10.f + fpconfigH + (fpconfigH ? 10.f : 0.f)), "Selected particle");
                 }
-                
             }
             if (currentTime - lastSpeedChange < 2.0) {
                 ImGui::PushFont(ImGui::font);
@@ -1580,9 +1662,9 @@ public:
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, screenTexture);
 
-            camera.projMat(res.x, res.y, shader->id);
-            glUniform1f(glGetUniformLocation(shader->id, "timeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
-            glUniform1f(glGetUniformLocation(shader->id, "uTime"), currentTime);
+            camera.projMat(static_cast<float>(res.x), static_cast<float>(res.y), shader->id);
+            glUniform1f(glGetUniformLocation(shader->id, "timeDelta"), timeStep * static_cast<float>(dt) * int(!paused) * (reverse ? -1 : 1));
+            glUniform1f(glGetUniformLocation(shader->id, "uTime"), static_cast<float>(currentTime));
             glUniform1i(glGetUniformLocation(shader->id, "accumulationFrameIndex"), accumulationFrameIndex);
             if (globalIllumination && paused) accumulationFrameIndex++;
             else accumulationFrameIndex = 0;
@@ -1592,9 +1674,9 @@ public:
             pprocshader->render(bloom, screenTexture, bloomThreshold, exposure, accumulationFrameIndex);
 
             cmptshader->use();
-            glUniform1f(glGetUniformLocation(cmptshader->id, "timeDelta"), timeStep * dt * int(!paused) * (reverse ? -1 : 1));
+            glUniform1f(glGetUniformLocation(cmptshader->id, "timeDelta"), timeStep * static_cast<float>(dt) * int(!paused) * (reverse ? -1 : 1));
             glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
-            glDispatchCompute(pBuffer.size(), 1, 1);
+            glDispatchCompute(static_cast<GLuint>(pBuffer.size()), 1, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             shader->use();
 

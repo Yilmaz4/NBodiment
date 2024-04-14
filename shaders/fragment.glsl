@@ -1,4 +1,4 @@
-#version 430 core
+#version 460 core
 
 #define EPSILON 0.001
 
@@ -23,8 +23,10 @@ struct Particle {
     float translucency;
     float refractive_index;
     float blurriness;
+
+    int textureid;
 };
-const int offset = 27;
+const int offset = 28;
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
@@ -40,7 +42,7 @@ Particle read(in int i) {
         vec3(vs[i + 12], vs[i + 13], vs[i + 14]),
         vec3(vs[i + 15], vs[i + 16], vs[i + 17]),
         vec3(vs[i + 18], vs[i + 19], vs[i + 20]),
-        vs[i + 21], vs[i + 22], vs[i + 23], vs[i + 24], vs[i + 25], vs[i + 26]
+        vs[i + 21], vs[i + 22], vs[i + 23], vs[i + 24], vs[i + 25], vs[i + 26], floatBitsToInt(vs[i + 27])
     );
 }
 
@@ -72,6 +74,7 @@ void write(in int i, in Particle p) {
     vs[i + 24] = p.translucency;
     vs[i + 25] = p.refractive_index;
     vs[i + 26] = p.blurriness;
+    vs[i + 27] = intBitsToFloat(p.textureid);
 }
 
 vec3 polar_to_cartesian(in float longitude, in float latitude, in float radius) {
@@ -92,10 +95,7 @@ uniform int accumulationFrameIndex;
 
 layout(binding = 1) uniform samplerCube skybox;
 
-layout(binding = 2) uniform sampler2D earthDaymap;
-layout(binding = 3) uniform sampler2D earthClouds;
-layout(binding = 4) uniform sampler2D starTexture;
-layout(binding = 5) uniform sampler2D temperatureRamp;
+layout(binding = 3) uniform sampler2DArray textureArray;
 
 uniform vec2 screenSize;
 uniform float uTime;
@@ -184,10 +184,10 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
             throughput *= exp(-p.absorptionColor * mt);
         }
 
-        if (false) { // uv texture mapping
+        if (p.textureid != 0) {
             float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
             float v = acos(normal.y) / M_PI;
-            p.albedo = texture2D(starTexture, vec2(u, v)).rgb;
+            p.albedo = texture(textureArray, vec3(u - floor(u), v - floor(v), p.textureid - 1)).rgb;
         }
 
         bool isRefractive = false;
@@ -207,15 +207,13 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
             reflectionRayDir = normalize(mix(reflectionRayDir, diffuseRay, pow(1.f - p.specularity, 2)));
             direction = reflectionRayDir;
             rayProbability = p.metallicity;
-        }
-        else if (p.metallicity + p.translucency > raySelectRoll) {
+        } else if (p.metallicity + p.translucency > raySelectRoll) {
             vec3 refractionRayDir = refract(direction, normal, from_inside ? (p.refractive_index / 1.f) : (1.f / p.refractive_index));
             refractionRayDir = normalize(mix(refractionRayDir, normalize(normal + randomDirection(seed, -normal)), pow(p.blurriness, 2)));
             direction = refractionRayDir;
             rayProbability = p.translucency;
             isRefractive = true;
-        }
-        else {
+        } else {
             direction = diffuseRay;
             rayProbability = 1.0 - p.metallicity - p.translucency;
         }
@@ -236,10 +234,6 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
     return radiance;
 }
 
-vec3 temperature_to_color(float t, float radius) { // unused
-    return texture2D(temperatureRamp, vec2(0.5f, clamp(t / 25000.f, 0.f, 1.f))).rgb;
-}
-
 void main() {
     vec2 coord = (gl_FragCoord.xy + gl_SamplePosition) / screenSize;
     vec3 direction = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
@@ -257,13 +251,11 @@ void main() {
         }
         if (accumulationFrameIndex == 0) {
             fragColor = vec4(irradiance / float(spp), 1.f);
-        }
-        else {
+        } else {
             vec3 pixel = texture(previousFrame, gl_FragCoord.xy / screenSize).rgb;
             fragColor = vec4(mix(pixel, irradiance / float(spp), 1.f / accumulationFrameIndex), 1.f);
         }
-    }
-    else {
+    } else {
         float mt = 1.f / 0.f;
         int pidx = -1;
         int lightSources[100]; // max number of lights in scene, adjust as needed
@@ -287,10 +279,10 @@ void main() {
         vec3 hit = origin + direction * mt;
         vec3 normal = normalize(hit - p.pos);
 
-        if (false) { // uv texture mapping
+        if (p.textureid != 0) {
             float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
             float v = acos(normal.y) / M_PI;
-            p.albedo = texture2D(starTexture, vec2(u, v)).rgb;
+            p.albedo = texture(textureArray, vec3(u - floor(u), v - floor(v), p.textureid - 1)).rgb;
         }
 
         vec3 irradiance = vec3(0.f);
@@ -300,7 +292,7 @@ void main() {
             bool from_inside;
             int obstacle = index(hit, q.pos - hit, mt, from_inside);
             if (shadows && obstacle != lightSources[i] && obstacle != pidx) continue;
-            float angle = dot(normal, normalize(q.pos - p.pos)); 
+            float angle = dot(normal, normalize(q.pos - p.pos));
             vec3 c = q.emissionColor * q.luminosity * angle * p.albedo * q.radius / pow(distance(q.pos, p.pos), 2);
             if (angle > 0.f) irradiance += c;
         }
