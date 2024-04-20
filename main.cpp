@@ -237,22 +237,30 @@ protected:
 public:
     GLuint id;
 
-    inline void load_textures(int tex) {
+    inline glm::vec3 load_textures(int tex) {
         char buffer[MAX_PATH] = { 0 };
         GetModuleFileNameA(NULL, buffer, MAX_PATH);
         std::string::size_type pos = std::string(buffer).find_last_of("\\/");
 
-        int width, height, nrChannels;
+        int w, h, nrChannels;
         unsigned char* data;
+        glm::vec3 avgColor = glm::vec3(0.f);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_CUBE_MAP, this->textureID);
         for (int i = 0; i < 6; i++) {
             std::string path = std::format("{}\\assets\\{}{}.jpg", std::string(buffer).substr(0, pos), tex, i);
-            data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+            data = stbi_load(path.c_str(), &w, &h, &nrChannels, 0);
             if (!data) throw Error("Skybox not available");
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            for (int i = 0; i < w * nrChannels; i += nrChannels) {
+                for (int j = 0; j < h; j++) {
+                    int base = w * j + i;
+                    avgColor += glm::vec3(data[base] / 255.f, data[base + 1] / 255.f, data[base + 2] / 255.f);
+                }
+            }
             stbi_image_free(data);
         }
+        return avgColor /= static_cast<float>(w * h * 6);
     }
 
     inline virtual void create() {
@@ -285,12 +293,14 @@ public:
         glActiveTexture(GL_TEXTURE1);
         glGenTextures(1, &textureID);
         glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
-        load_textures(0);
+        glm::vec3 ambientLight = load_textures(0);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+        glUniform3f(glGetUniformLocation(id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
 
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
@@ -579,6 +589,10 @@ struct Particle {
     float temp;
     float radius;
 
+    float axial_tilt;
+    float rotational_period;
+    float yaw;
+
     glm::vec3 albedo;
     glm::vec3 emissionColor;
     glm::vec3 absorptionColor;
@@ -590,6 +604,8 @@ struct Particle {
     float blurriness;
 
     int texture;
+    int normmap;
+    int specmap;
 };
 
 class Camera {
@@ -757,6 +773,10 @@ public:
 
     std::vector<std::string> textures{ "None", "Add new texture..." };
     GLuint textureArray;
+    std::vector<std::string> specmaps{ "None", "Add new specular map..." };
+    GLuint specmapArray;
+    std::vector<std::string> normmaps{ "None", "Add new normal map... " };
+    GLuint normmapArray;
 
     int hovering;
     int selected = -1;
@@ -773,7 +793,6 @@ public:
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
     int skyboxImage = 0;
-    glm::vec3 ambientLight = { 0.1f, 0.1f, 0.1f };
 
     Particle satellite;
     float orbital_radius;
@@ -836,7 +855,6 @@ public:
         shader->use();
         glShaderStorageBlockBinding(shader->id, glGetProgramResourceIndex(shader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform3f(glGetUniformLocation(shader->id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
-        glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
         glUniform1i(glGetUniformLocation(shader->id, "numParticles"), static_cast<GLint>(pBuffer.size()));
         glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
         glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
@@ -847,8 +865,8 @@ public:
         glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 4096, 2048, 16);
 
         glActiveTexture(GL_TEXTURE0);
@@ -1069,6 +1087,10 @@ public:
                 .temp = scene.central_temperature,
                 .radius = cbrt((3.f * (scene.central_mass / scene.central_density)) / (4.f * (float)(M_PI))),
 
+                .axial_tilt = 0.f,
+                .rotational_period = 0.f,
+                .yaw = 0.f,
+
                 .albedo = glm::vec3(0.f, 0.f, 0.f),
                 .emissionColor = glm::vec3(1.f, 1.f, 1.f),
                 .luminosity = scene.central_luminosity,
@@ -1112,6 +1134,10 @@ public:
                 .mass = m,
                 .temp = temp(rng),
                 .radius = r,
+
+                .axial_tilt = 0.f,
+                .rotational_period = 0.f,
+                .yaw = 0.f,
 
                 .albedo = c,
                 .emissionColor = c,
@@ -1187,26 +1213,6 @@ public:
             ImGui::SameLine();
             ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
 
-            ImGui::SeparatorText("Environment");
-            if (ImGui::ColorEdit3("Ambient light", &ambientLight[0])) {
-                glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), ambientLight.r, ambientLight.g, ambientLight.b);
-                accumulationFrameIndex = 0;
-            }
-            const char* images[] = { "Milky Way", "Sorsele", "Mountains" };
-            preview = images[skyboxImage];
-
-            if (ImGui::BeginCombo("Skybox", preview)) {
-                for (int n = 0; n < 3; n++) {
-                    const bool is_selected = (skyboxImage == n);
-                    if (ImGui::Selectable(images[n], is_selected)) {
-                        skyboxImage = n;
-                        shader->load_textures(n);
-                        accumulationFrameIndex = 0;
-                    }
-                    if (is_selected) ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndCombo();
-            }
             ImGui::SeparatorText("Graphics");
             if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
                 glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
@@ -1231,6 +1237,22 @@ public:
             if (bloom) {
                 ImGui::DragFloat("Bloom threshold", &bloomThreshold, std::max(bloomThreshold / 20, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                 ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
+            }
+            const char* images[] = { "Milky Way", "Sorsele", "Mountains" };
+            preview = images[skyboxImage];
+
+            if (ImGui::BeginCombo("Skybox", preview)) {
+                for (int n = 0; n < 3; n++) {
+                    const bool is_selected = (skyboxImage == n);
+                    if (ImGui::Selectable(images[n], is_selected)) {
+                        skyboxImage = n;
+                        glm::vec3 avgColor = shader->load_textures(n);
+                        glUniform3f(glGetUniformLocation(shader->id, "ambientLight"), avgColor.r, avgColor.g, avgColor.b);
+                        accumulationFrameIndex = 0;
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
             }
 
             ImGui::SeparatorText("Camera");
@@ -1257,32 +1279,22 @@ public:
             ImGuiWindowFlags_NoMove
         )) {
             ImGui::SliderInt("# Particles", &scene.num_particles, 0, 10000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
-            ImGui::PushItemWidth(100);
-            ImGui::SeparatorText("Distance");
-            ImGui::DragFloat("Min##distance", &scene.min_distance, scene.min_distance / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_distance), "%.9g m", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-            ImGui::DragFloat("Max##distance", &scene.max_distance, scene.max_distance / 20.f, std::max(FLT_MIN, scene.min_distance), FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
-            ImGui::SeparatorText("Mass");
-            ImGui::DragFloat("Min##mass", &scene.min_mass, scene.min_mass / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_mass), "%.9g kg", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-            ImGui::DragFloat("Max##mass", &scene.max_mass, scene.max_mass / 20.f, std::max(FLT_MIN, scene.min_mass), FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-            ImGui::SeparatorText("Density");
-            ImGui::DragFloat("Min##density", &scene.min_density, scene.min_density / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_density), "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-            ImGui::DragFloat("Max##density", &scene.max_density, scene.max_density / 20.f, std::max(FLT_MIN, scene.min_density), FLT_MAX, "%.9g kg/m^3", ImGuiSliderFlags_AlwaysClamp);
-            ImGui::SeparatorText("Velocity");
+            ImGui::DragFloatRange2("Distance", &scene.min_distance, &scene.max_distance, 1.f, FLT_MIN, FLT_MAX, "%.9g m", nullptr, ImGuiSliderFlags_AlwaysClamp);
+            ImGui::DragFloatRange2("Mass", &scene.min_mass, &scene.max_mass, 1.f, FLT_MIN, FLT_MAX, "%.9g kg", nullptr, ImGuiSliderFlags_AlwaysClamp);
+            ImGui::DragFloatRange2("Density", &scene.min_density, &scene.max_density, 1.f, FLT_MIN, FLT_MAX, u8"%.9g kg/m³", nullptr, ImGuiSliderFlags_AlwaysClamp);
             if (scene.central_body)
                 ImGui::Checkbox("Automatic Orbital Velocity", &scene.orbital_velocity);
             if (!scene.orbital_velocity || !scene.central_body) {
-                ImGui::DragFloat("Min##velocity", &scene.min_velocity, scene.min_velocity / 20.f, FLT_MIN, std::min(FLT_MAX, scene.max_velocity), "%.9g m/s", ImGuiSliderFlags_AlwaysClamp); ImGui::SameLine();
-                ImGui::DragFloat("Max##velocity", &scene.max_velocity, scene.max_velocity / 20.f, std::max(FLT_MIN, scene.min_velocity), FLT_MAX, "%.9g m/s", ImGuiSliderFlags_AlwaysClamp);
+                ImGui::DragFloatRange2("Velocity", &scene.min_velocity, &scene.max_velocity, 1.f, FLT_MIN, FLT_MAX, "%.9g m/s", nullptr, ImGuiSliderFlags_AlwaysClamp);
             }
             ImGui::Checkbox("No vertical component", &scene.disk_only);
             ImGui::SameLine();
             ImGui::HelpMarker("Particles will be placed on a horizontal plane only.");
-            ImGui::PopItemWidth();
             ImGui::Checkbox("Central body", &scene.central_body);
             if (scene.central_body) {
                 ImGui::DragFloat("Mass", &scene.central_mass, scene.central_mass / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
                 ImGui::DragFloat("Density", &scene.central_density, scene.central_density / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-                ImGui::DragFloat("Emission strength", &scene.central_luminosity, std::max(scene.central_luminosity / 20.f, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_AlwaysClamp);
+                ImGui::DragFloat("Luminosity", &scene.central_luminosity, std::max(scene.central_luminosity / 20.f, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_AlwaysClamp);
             }
             ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal, 3.f);
 
@@ -1357,9 +1369,54 @@ public:
             p.vel = glm::normalize(p.vel) * velocity;
         }
         update |= ImGui::DragFloat("Mass", &p.mass, (p.mass / 10.f), FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
-        update |= ImGui::DragFloat("Temperature", &p.temp, (p.temp / 10.f), FLT_MIN, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
+        update |= ImGui::DragFloat("Temperature", &p.temp, std::max(p.temp / 10.f, 1e-5f), 0, FLT_MAX, "%.9g K", ImGuiSliderFlags_AlwaysClamp);
         update |= ImGui::DragFloat("Radius", &p.radius, (p.radius / 10.f), FLT_MIN, FLT_MAX, "%.9g m", ImGuiSliderFlags_AlwaysClamp);
+
+        ImGui::SeparatorText("Rotation");
+        update |= ImGui::DragFloat("Axial Tilt", &p.axial_tilt, 0.5f, 0, 180, u8"%.2f °", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_NoRoundToFormat);
+        update |= ImGui::DragFloat("Rotational Period", &p.rotational_period, std::max(p.rotational_period / 10.f, 1e-5f), 0, FLT_MAX, "%.9g s", ImGuiSliderFlags_AlwaysClamp);
+        update |= ImGui::DragFloat("Yaw", &p.yaw, 0.5f, 0, 180, u8"%.2f °", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_NoRoundToFormat);
+
         ImGui::SeparatorText("Appearance");
+
+        auto load_texture = [this](unsigned char** buffptr) {
+            OPENFILENAMEA ofn;
+            char szFileName[MAX_PATH];
+            char szFileTitle[MAX_PATH];
+
+            *szFileName = 0;
+            *szFileTitle = 0;
+
+            ofn.lStructSize = sizeof(OPENFILENAME);
+            ofn.hwndOwner = GetFocus();
+            ofn.lpstrFilter = "JPEG (*.jpg)\0*.jpg\0PNG (*.png)\0*.png\0All Files (*.*)\0*.*\0";
+            ofn.lpstrCustomFilter = NULL;
+            ofn.nMaxCustFilter = 0;
+            ofn.nFilterIndex = 0;
+            ofn.lpstrFile = szFileName;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.lpstrInitialDir = ".";
+            ofn.lpstrFileTitle = szFileTitle;
+            ofn.nMaxFileTitle = MAX_PATH;
+            ofn.lpstrTitle = "Select spherical texture...";
+            ofn.lpstrDefExt = "*.jpg";
+
+            ofn.Flags = OFN_FILEMUSTEXIST;
+
+            if (!GetOpenFileNameA(reinterpret_cast<LPOPENFILENAMEA>(&ofn))) {
+                glfwRestoreWindow(window);
+                *buffptr = static_cast<unsigned char*>(nullptr);
+            }
+
+            int w, h, nrChannels;
+            unsigned char* data = stbi_load(ofn.lpstrFile, &w, &h, &nrChannels, 0);
+
+            if (!data) throw Error("Failed to load texture");
+
+            *buffptr = stbir_resize_uint8_linear(data, w, h, NULL, nullptr, 4096, 2048, NULL, static_cast<stbir_pixel_layout>(nrChannels));
+            free(data);
+            return ofn.lpstrFileTitle;
+        };
 
         const std::string preview = textures[p.texture];
         if (ImGui::BeginCombo("Texture", preview.c_str())) {
@@ -1367,40 +1424,11 @@ public:
                 const bool is_selected = (p.texture == i);
                 if (ImGui::Selectable(textures[i].c_str(), is_selected)) {
                     if (i == textures.size() - 1) {
-                        OPENFILENAMEA ofn;
-                        char szFileName[MAX_PATH];
-                        char szFileTitle[MAX_PATH];
-
-                        *szFileName = 0;
-                        *szFileTitle = 0;
-
-                        ofn.lStructSize = sizeof(OPENFILENAME);
-                        ofn.hwndOwner = GetFocus();
-                        ofn.lpstrFilter = "JPEG (*.jpg)\0*.jpg\0PNG (*.png)\0*.png\0All Files (*.*)\0*.*\0";
-                        ofn.lpstrCustomFilter = NULL;
-                        ofn.nMaxCustFilter = 0;
-                        ofn.nFilterIndex = 0;
-                        ofn.lpstrFile = szFileName;
-                        ofn.nMaxFile = MAX_PATH;
-                        ofn.lpstrInitialDir = ".";
-                        ofn.lpstrFileTitle = szFileTitle;
-                        ofn.nMaxFileTitle = MAX_PATH;
-                        ofn.lpstrTitle = "Select spherical texture...";
-                        ofn.lpstrDefExt = "*.jpg";
-
-                        ofn.Flags = OFN_FILEMUSTEXIST;
-
-                        if (!GetOpenFileNameA(reinterpret_cast<LPOPENFILENAMEA>(&ofn))) {
-                            glfwRestoreWindow(window);
-                            continue;
-                        }
-
-                        int w, h, nrChannels;
-                        unsigned char* data = stbi_load(ofn.lpstrFile, &w, &h, &nrChannels, 0);
-
-                        if (!data) throw Error("Failed to load texture");
-
-                        unsigned char* textureBuffer = stbir_resize_uint8_linear(data, w, h, NULL, nullptr, 4096, 2048, NULL, static_cast<stbir_pixel_layout>(nrChannels));
+                        unsigned char* textureBuffer;
+                        std::string filename;
+                        try { filename = load_texture(&textureBuffer); }
+                        catch (Error) { continue; }
+                        if (textureBuffer == nullptr) continue;
 
                         glActiveTexture(GL_TEXTURE3);
                         glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);
@@ -1408,9 +1436,8 @@ public:
 
                         glDebugMessageCallback(glMessageCallback, 0);
 
-                        free(data);
                         free(textureBuffer);
-                        textures.insert(textures.begin() + i, ofn.lpstrFileTitle);
+                        textures.insert(textures.begin() + i, filename);
                         glfwRestoreWindow(window);
                     }
                     p.texture = i;
@@ -1426,12 +1453,27 @@ public:
             update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
             ImGui::SameLine(); ImGui::HelpMarker("Proportion of the incident light that is reflected by the surface.");
         } else {
-            GLuint textureViews[16];
-            glGenTextures(16, textureViews);
-            for (int i = 0; i < 16; i++) {
-                glTextureView(textureViews[i], GL_TEXTURE_2D, textureArray, GL_RGB8, 0, 1, i, 1);
+            if (ImGui::BeginTabBar("Textures", NULL)) {
+                GLuint textureViews;
+                glGenTextures(1, &textureViews);
+                if (ImGui::BeginTabItem("Texture")) {
+                    glTextureView(textureViews, GL_TEXTURE_2D, textureArray, GL_RGB8, 0, 1, p.texture - 1, 1);
+                    ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Normal map")) {
+                    glTextureView(textureViews, GL_TEXTURE_2D, normmapArray, GL_RGB8, 0, 1, p.normmap - 1, 1);
+                    ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Specular map")) {
+                    glTextureView(textureViews, GL_TEXTURE_2D, specmapArray, GL_RGB8, 0, 1, p.specmap - 1, 1);
+                    ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
             }
-            ImGui::Image(reinterpret_cast<void*>(textureViews[p.texture - 1]), ImVec2(290, 145));
+            
         }
         update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
         update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.2f, FLT_MIN, FLT_MAX);
