@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /imgui.ini
+/assets/Moon_texture.jpg
+/assets/Land_ocean_ice_cloud_hires.jpg
+/assets/2k_jupiter.jpg
