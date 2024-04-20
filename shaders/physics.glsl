@@ -10,6 +10,10 @@ struct Particle {
     float temp;
     float radius;
 
+    float axial_tilt;
+    float rotational_period;
+    float yaw;
+
     vec3 albedo;
     vec3 emissionColor;
     vec3 absorptionColor;
@@ -21,8 +25,10 @@ struct Particle {
     float blurriness;
 
     int textureid;
+    int normmapid;
+    int specmapid;
 };
-const int offset = 28;
+const int offset = 33;
 
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
@@ -35,10 +41,12 @@ Particle read(in int i) {
         vec3(vs[i + 3], vs[i + 4], vs[i + 5]),
         vec3(vs[i + 6], vs[i + 7], vs[i + 8]),
         vs[i + 9], vs[i + 10], vs[i + 11],
-        vec3(vs[i + 12], vs[i + 13], vs[i + 14]),
+        vs[i + 12], vs[i + 13], vs[i + 14],
         vec3(vs[i + 15], vs[i + 16], vs[i + 17]),
         vec3(vs[i + 18], vs[i + 19], vs[i + 20]),
-        vs[i + 21], vs[i + 22], vs[i + 23], vs[i + 24], vs[i + 25], vs[i + 26], floatBitsToInt(vs[i + 27])
+        vec3(vs[i + 21], vs[i + 22], vs[i + 23]),
+        vs[i + 24], vs[i + 25], vs[i + 26], vs[i + 27], vs[i + 28], vs[i + 29],
+        floatBitsToInt(vs[i + 30]), floatBitsToInt(vs[i + 31]), floatBitsToInt(vs[i + 32])
     );
 }
 
@@ -55,22 +63,27 @@ void write(in int i, in Particle p) {
     vs[i + 9] = p.mass;
     vs[i + 10] = p.temp;
     vs[i + 11] = p.radius;
-    vs[i + 12] = p.albedo.r;
-    vs[i + 13] = p.albedo.g;
-    vs[i + 14] = p.albedo.b;
-    vs[i + 15] = p.emissionColor.r;
-    vs[i + 16] = p.emissionColor.g;
-    vs[i + 17] = p.emissionColor.b;
-    vs[i + 18] = p.absorptionColor.r;
-    vs[i + 19] = p.absorptionColor.g;
-    vs[i + 20] = p.absorptionColor.b;
-    vs[i + 21] = p.luminosity;
-    vs[i + 22] = p.specularity;
-    vs[i + 23] = p.metallicity;
-    vs[i + 24] = p.translucency;
-    vs[i + 25] = p.refractive_index;
-    vs[i + 26] = p.blurriness;
-    vs[i + 27] = intBitsToFloat(p.textureid);
+    vs[i + 12] = p.axial_tilt;
+    vs[i + 13] = p.rotational_period;
+    vs[i + 14] = p.yaw;
+    vs[i + 15] = p.albedo.r;
+    vs[i + 16] = p.albedo.g;
+    vs[i + 17] = p.albedo.b;
+    vs[i + 18] = p.emissionColor.r;
+    vs[i + 19] = p.emissionColor.g;
+    vs[i + 20] = p.emissionColor.b;
+    vs[i + 21] = p.absorptionColor.r;
+    vs[i + 22] = p.absorptionColor.g;
+    vs[i + 23] = p.absorptionColor.b;
+    vs[i + 24] = p.luminosity;
+    vs[i + 25] = p.specularity;
+    vs[i + 26] = p.metallicity;
+    vs[i + 27] = p.translucency;
+    vs[i + 28] = p.refractive_index;
+    vs[i + 29] = p.blurriness;
+    vs[i + 30] = intBitsToFloat(p.textureid);
+    vs[i + 31] = intBitsToFloat(p.normmapid);
+    vs[i + 32] = intBitsToFloat(p.specmapid);
 }
 
 uniform float timeDelta;
