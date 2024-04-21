@@ -109,6 +109,8 @@ uniform int accumulationFrameIndex;
 layout(binding = 1) uniform samplerCube skybox;
 
 layout(binding = 3) uniform sampler2DArray textureArray;
+layout(binding = 4) uniform sampler2DArray normmapArray;
+layout(binding = 5) uniform sampler2DArray specmapArray;
 
 uniform vec2 screenSize;
 uniform float uTime;
@@ -200,7 +202,20 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
         if (p.textureid != 0) {
             float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
             float v = acos(normal.y) / M_PI;
-            p.albedo = texture(textureArray, vec3(u - floor(u), v - floor(v), p.textureid - 1)).rgb;
+            vec2 idx = vec2(u - floor(u), v - floor(v));
+            p.albedo = texture(textureArray, vec3(idx, p.textureid - 1)).rgb;
+            if (p.normmapid != 0) {
+                vec3 up = vec3(0.0, 1.0, 0.0);
+                if (abs(normal.y) > 0.9)
+                    up = vec3(1.0, 0.0, 0.0);
+                vec3 tangent = normalize(cross(up, normal));
+                vec3 bitangent = normalize(cross(normal, tangent));
+
+                normal = mix(normal, mat3(tangent, bitangent, normal) * (texture(normmapArray, vec3(idx, p.normmapid - 1)).rgb * 2.f - 1.f), 0.5);
+            }
+            if (p.specmapid != 0) {
+                
+            }
         }
 
         bool isRefractive = false;
@@ -293,11 +308,19 @@ void main() {
         vec3 normal = normalize(hit - p.pos);
 
         if (p.textureid != 0) {
-            float y = p.yaw / 180.f;
             float u = (atan2(-normal.z, normal.x) + M_PI) / (2 * M_PI);
             float v = acos(normal.y) / M_PI;
-            
-            p.albedo = texture(textureArray, vec3(u - floor(u), v - floor(v), p.textureid - 1)).rgb;
+            vec2 idx = vec2(u - floor(u), v - floor(v));
+            p.albedo = texture(textureArray, vec3(idx, p.textureid - 1)).rgb;
+            if (p.normmapid != 0) {
+                vec3 up = vec3(0.0, 1.0, 0.0);
+                if (abs(normal.y) > 0.9)
+                    up = vec3(1.0, 0.0, 0.0);
+                vec3 tangent = normalize(cross(up, normal));
+                vec3 bitangent = normalize(cross(normal, tangent));
+
+                normal = mix(normal, mat3(tangent, bitangent, normal) * (texture(normmapArray, vec3(idx, p.normmapid - 1)).rgb * 2.f - 1.f), 0.5);
+            }
         }
 
         vec3 irradiance = vec3(0.f);
