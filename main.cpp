@@ -869,6 +869,24 @@ public:
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 4096, 2048, 16);
 
+        glActiveTexture(GL_TEXTURE4);
+        glGenTextures(1, &normmapArray);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, normmapArray);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 4096, 2048, 16);
+
+        glActiveTexture(GL_TEXTURE5);
+        glGenTextures(1, &specmapArray);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, specmapArray);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGB8, 4096, 2048, 16);
+
         glActiveTexture(GL_TEXTURE0);
         glGenTextures(1, &screenTexture);
         glBindTexture(GL_TEXTURE_2D, screenTexture);
@@ -1157,6 +1175,8 @@ public:
         glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(pBuffer.data()), GL_DYNAMIC_DRAW);
         glUniform1i(glGetUniformLocation(shader->id, "numParticles"), static_cast<GLint>(pBuffer.size()));
         accumulationFrameIndex = 0;
+        if (selected != 0) selectedParticle = false;
+        if (following != 0) lockedToParticle = false;
     }
 
 
@@ -1417,56 +1437,62 @@ public:
             free(data);
             return ofn.lpstrFileTitle;
         };
+        
+        auto texturecombo = [this, &load_texture, &update](const char* label, int* ptr, std::vector<std::string>& entries, GLuint arr, int tex) {
+            const std::string preview = entries[*ptr];
+            if (ImGui::BeginCombo(label, preview.c_str())) {
+                for (int i = 0; i < std::min(entries.size(), 17ull); i++) {
+                    const bool is_selected = (*ptr == i);
+                    if (ImGui::Selectable(entries[i].c_str(), is_selected)) {
+                        if (i == entries.size() - 1) {
+                            unsigned char* textureBuffer;
+                            std::string filename;
+                            try { filename = load_texture(&textureBuffer); }
+                            catch (Error) { continue; }
+                            if (textureBuffer == nullptr) continue;
 
-        const std::string preview = textures[p.texture];
-        if (ImGui::BeginCombo("Texture", preview.c_str())) {
-            for (int i = 0; i < std::min(textures.size(), 17ull); i++) {
-                const bool is_selected = (p.texture == i);
-                if (ImGui::Selectable(textures[i].c_str(), is_selected)) {
-                    if (i == textures.size() - 1) {
-                        unsigned char* textureBuffer;
-                        std::string filename;
-                        try { filename = load_texture(&textureBuffer); }
-                        catch (Error) { continue; }
-                        if (textureBuffer == nullptr) continue;
+                            glActiveTexture(GL_TEXTURE0 + tex);
+                            glBindTexture(GL_TEXTURE_2D_ARRAY, arr);
+                            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i - 1, 4096, 2048, 1, GL_RGB, GL_UNSIGNED_BYTE, textureBuffer);
 
-                        glActiveTexture(GL_TEXTURE3);
-                        glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);
-                        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i - 1, 4096, 2048, 1, GL_RGB, GL_UNSIGNED_BYTE, textureBuffer);
+                            glDebugMessageCallback(glMessageCallback, 0);
 
-                        glDebugMessageCallback(glMessageCallback, 0);
-
-                        free(textureBuffer);
-                        textures.insert(textures.begin() + i, filename);
-                        glfwRestoreWindow(window);
+                            free(textureBuffer);
+                            entries.insert(entries.begin() + i, filename);
+                            glfwRestoreWindow(window);
+                        }
+                        *ptr = i;
+                        update = true;
+                        accumulationFrameIndex = 0;
                     }
-                    p.texture = i;
-                    update = true;
-                    accumulationFrameIndex = 0;
+                    if (is_selected) ImGui::SetItemDefaultFocus();
                 }
-                if (is_selected) ImGui::SetItemDefaultFocus();
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
-        }
+        };
+
+        texturecombo("Texture", &p.texture, textures, textureArray, 3);
 
         if (p.texture == 0) {
             update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
             ImGui::SameLine(); ImGui::HelpMarker("Proportion of the incident light that is reflected by the surface.");
         } else {
+            texturecombo("Normal map", &p.normmap, normmaps, normmapArray, 4);
+            texturecombo("Specular map", &p.specmap, specmaps, specmapArray, 5);
             if (ImGui::BeginTabBar("Textures", NULL)) {
                 GLuint textureViews;
                 glGenTextures(1, &textureViews);
-                if (ImGui::BeginTabItem("Texture")) {
+                if (ImGui::BeginTabItem("Diffuse texture")) {
                     glTextureView(textureViews, GL_TEXTURE_2D, textureArray, GL_RGB8, 0, 1, p.texture - 1, 1);
                     ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Normal map")) {
+                if (p.normmap && ImGui::BeginTabItem("Normal map")) {
                     glTextureView(textureViews, GL_TEXTURE_2D, normmapArray, GL_RGB8, 0, 1, p.normmap - 1, 1);
                     ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Specular map")) {
+                if (p.specmap &&ImGui::BeginTabItem("Specular map")) {
                     glTextureView(textureViews, GL_TEXTURE_2D, specmapArray, GL_RGB8, 0, 1, p.specmap - 1, 1);
                     ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
                     ImGui::EndTabItem();
