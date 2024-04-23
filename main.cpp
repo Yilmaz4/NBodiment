@@ -1431,6 +1431,7 @@ public:
                     glfwShowWindow(window);
                 else glfwRestoreWindow(window);
                 *buffptr = static_cast<unsigned char*>(nullptr);
+                return ofn.lpstrFileTitle;
             }
 
             int w, h, nrChannels;
