@@ -202,7 +202,7 @@ vec3 trace(in vec3 origin, in vec3 direction, in int ridx) {
         if (p.textureid != 0) {
             vec3 orbital_plane = vec3(1.f, 0.f, 0.f);
             vec3 n = normal * cos(p.axial_tilt * M_PI / 180.f) + cross(orbital_plane, normal) * sin(p.axial_tilt * M_PI / 180.f) + orbital_plane * dot(normal, orbital_plane) * (1 - cos(p.axial_tilt * M_PI / 180.f));
-            float u = (atan2(-n.z, n.x) + M_PI) / (2 * M_PI) + p.yaw / 360.f;
+            float u = (atan2(-n.z, n.x) + M_PI) / (2 * M_PI) - p.yaw / 360.f;
             float v = acos(n.y) / M_PI;
             vec2 idx = vec2(u - floor(u), v - floor(v));
             p.albedo = texture(textureArray, vec3(idx, p.textureid - 1)).rgb;
@@ -312,7 +312,7 @@ void main() {
         if (p.textureid != 0) {
             vec3 orbital_plane = vec3(1.f, 0.f, 0.f);
             vec3 n = normal * cos(p.axial_tilt * M_PI / 180.f) + cross(orbital_plane, normal) * sin(p.axial_tilt * M_PI / 180.f) + orbital_plane * dot(normal, orbital_plane) * (1 - cos(p.axial_tilt * M_PI / 180.f));
-            float u = (atan2(-n.z, n.x) + M_PI) / (2 * M_PI) + p.yaw / 360.f;
+            float u = (atan2(-n.z, n.x) + M_PI) / (2 * M_PI) - p.yaw / 360.f;
             float v = acos(n.y) / M_PI;
             vec2 idx = vec2(u - floor(u), v - floor(v));
             p.albedo = texture(textureArray, vec3(idx, p.textureid - 1)).rgb;
