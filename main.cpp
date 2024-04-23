@@ -931,12 +931,6 @@ public:
     static inline void on_windowResize(GLFWwindow* window, int w, int h) {
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
 
-        if (w == 0 && h == 0) {
-            app->was_paused = app->paused;
-            app->paused = true;
-            return;
-        } else app->paused = app->was_paused;
-
         app->res = { w, h };
         glViewport(0, 0, app->res.x, app->res.y);
         glUniform2f(glGetUniformLocation(app->shader->id, "screenSize"), static_cast<float>(w), static_cast<float>(h));
