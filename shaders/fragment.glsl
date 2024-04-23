@@ -318,12 +318,12 @@ void main() {
             p.albedo = texture(textureArray, vec3(idx, p.textureid - 1)).rgb;
             if (p.normmapid != 0) {
                 vec3 up = vec3(0.0, 1.0, 0.0);
-                if (abs(n.y) > 0.9)
+                if (abs(normal.y) > 0.9)
                     up = vec3(1.0, 0.0, 0.0);
-                vec3 tangent = normalize(cross(up, n));
-                vec3 bitangent = normalize(cross(n, tangent));
+                vec3 tangent = normalize(cross(up, normal));
+                vec3 bitangent = normalize(cross(normal, tangent));
 
-                normal = mix(n, mat3(tangent, bitangent, n) * (texture(normmapArray, vec3(idx, p.normmapid - 1)).rgb * 2.f - 1.f), 0.5);
+                normal = mix(normal, mat3(tangent, bitangent, normal) * (texture(normmapArray, vec3(idx, p.normmapid - 1)).rgb * 2.f - 1.f), 0.5);
             }
         }
 
