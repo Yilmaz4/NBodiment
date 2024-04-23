@@ -190,7 +190,6 @@ public:
     }
     void display() {
         MessageBoxW(NULL, msg, L"Error", MB_OK | MB_ICONERROR);
-        exit(1);
     }
 };
 
@@ -714,13 +713,13 @@ struct Scene {
     float max_velocity = 1.0f;
 
     bool orbital_velocity = true;
-    bool disk_only = false;
+    float planar_deviation = 45.f;
     bool central_body = true;
 
     float central_mass = 1e+10f;
-    float central_density = 1e+10f;
+    float central_density = 2e+10f;
     float central_temperature = 3e+3;
-    float central_luminosity = 20.f;
+    float central_luminosity = 15.f;
 };
 
 struct Controls {
@@ -1092,6 +1091,8 @@ public:
         std::uniform_real_distribution<float> mass(scene.min_mass, scene.max_mass);
         std::uniform_real_distribution<float> density(scene.min_density, scene.max_density);
         std::uniform_real_distribution<float> temp(scene.min_temperature, scene.max_temperature);
+        std::uniform_real_distribution<float> elevation(-scene.planar_deviation * M_PI_2 / 90.f, scene.planar_deviation * M_PI_2 / 90.f);
+        std::uniform_real_distribution<float> azimuth(-M_PI, M_PI);
         std::uniform_real_distribution<float> clr(0.f, 1.f);
         
         pBuffer.clear();
@@ -1123,10 +1124,15 @@ public:
         for (int i = 0; i < scene.num_particles; i++) {
             float m = mass(rng);
             float d = density(rng);
-            float r = cbrt((3.f * (m / d)) / (4.f * (float)(M_PI)));
+            float r = cbrt((3.f * (m / d)) / (4.f * M_PI));
 
-            glm::vec3 p = { unit_vec(rng), !scene.disk_only * unit_vec(rng), unit_vec(rng) };
-            p = glm::normalize(p) * pos(rng);
+            float rho = pos(rng);
+            float theta = elevation(rng) + M_PI_2;
+            float phi = azimuth(rng);
+            glm::vec3 p = { rho * sin(theta) * cos(phi),
+                            rho * cos(theta),
+                            rho * sin(theta)* sin(phi) };
+            if (scene.planar_deviation == 0.f) p.y = 0.f;
 
             bool abort_flag = false;
             for (int j = 0; pBuffer.size() != 0 && j < i + static_cast<int>(scene.central_body); j++)
@@ -1141,7 +1147,7 @@ public:
 
             glm::vec3 v{};
             if (scene.orbital_velocity && scene.central_body) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (scene.central_mass + m) / glm::length(p));
-            else v = glm::normalize(glm::vec3(unit_vec(rng), !scene.disk_only * unit_vec(rng), unit_vec(rng))) * vel(rng);
+            else v = glm::normalize(glm::vec3(unit_vec(rng), unit_vec(rng), unit_vec(rng))) * vel(rng);
 
             glm::vec3 c = { clr(rng), clr(rng), clr(rng) };
             
@@ -1175,8 +1181,13 @@ public:
         glBufferData(GL_SHADER_STORAGE_BUFFER, pBuffer.size() * sizeof(Particle), reinterpret_cast<float*>(pBuffer.data()), GL_DYNAMIC_DRAW);
         glUniform1i(glGetUniformLocation(shader->id, "numParticles"), static_cast<GLint>(pBuffer.size()));
         accumulationFrameIndex = 0;
-        if (selected != 0) selectedParticle = false;
-        if (following != 0) lockedToParticle = false;
+        if (selectedParticle) selectedParticle = false;
+        if (lockedToParticle) {
+            camera.direction = -camera.localCoords;
+            camera.yaw -= 180;
+            camera.pitch = -camera.pitch;
+            lockedToParticle = false;
+        }
     }
 
 
@@ -1299,17 +1310,15 @@ public:
             ImGuiWindowFlags_NoMove
         )) {
             ImGui::SliderInt("# Particles", &scene.num_particles, 0, 10000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
-            ImGui::DragFloatRange2("Distance", &scene.min_distance, &scene.max_distance, 1.f, FLT_MIN, FLT_MAX, "%.9g m", nullptr, ImGuiSliderFlags_AlwaysClamp);
-            ImGui::DragFloatRange2("Mass", &scene.min_mass, &scene.max_mass, 1.f, FLT_MIN, FLT_MAX, "%.9g kg", nullptr, ImGuiSliderFlags_AlwaysClamp);
-            ImGui::DragFloatRange2("Density", &scene.min_density, &scene.max_density, 1.f, FLT_MIN, FLT_MAX, u8"%.9g kg/m³", nullptr, ImGuiSliderFlags_AlwaysClamp);
+            ImGui::DragFloatRange2("Distance", &scene.min_distance, &scene.max_distance, scene.max_distance / 10.f, FLT_MIN, FLT_MAX, "%.9g m", nullptr, ImGuiSliderFlags_AlwaysClamp);
+            ImGui::DragFloatRange2("Mass", &scene.min_mass, &scene.max_mass, scene.max_mass / 10.f, FLT_MIN, FLT_MAX, "%.9g kg", nullptr, ImGuiSliderFlags_AlwaysClamp);
+            ImGui::DragFloatRange2("Density", &scene.min_density, &scene.max_density, scene.max_density / 10.f, FLT_MIN, FLT_MAX, u8"%.9g kg/m³", nullptr, ImGuiSliderFlags_AlwaysClamp);
             if (scene.central_body)
                 ImGui::Checkbox("Automatic Orbital Velocity", &scene.orbital_velocity);
             if (!scene.orbital_velocity || !scene.central_body) {
-                ImGui::DragFloatRange2("Velocity", &scene.min_velocity, &scene.max_velocity, 1.f, FLT_MIN, FLT_MAX, "%.9g m/s", nullptr, ImGuiSliderFlags_AlwaysClamp);
+                ImGui::DragFloatRange2("Velocity", &scene.min_velocity, &scene.max_velocity, scene.max_velocity / 10.f, FLT_MIN, FLT_MAX, "%.9g m/s", nullptr, ImGuiSliderFlags_AlwaysClamp);
             }
-            ImGui::Checkbox("No vertical component", &scene.disk_only);
-            ImGui::SameLine();
-            ImGui::HelpMarker("Particles will be placed on a horizontal plane only.");
+            ImGui::SliderFloat("Planar deviation", &scene.planar_deviation, 0.f, 90.f, u8"±%.1f °", ImGuiSliderFlags_AlwaysClamp);
             ImGui::Checkbox("Central body", &scene.central_body);
             if (scene.central_body) {
                 ImGui::DragFloat("Mass", &scene.central_mass, scene.central_mass / 20.f, FLT_MIN, FLT_MAX, "%.9g kg", ImGuiSliderFlags_AlwaysClamp);
@@ -1395,7 +1404,7 @@ public:
         ImGui::SeparatorText("Rotation");
         update |= ImGui::DragFloat("Axial Tilt", &p.axial_tilt, 0.5f, 0, 180, u8"%.2f °", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_NoRoundToFormat);
         update |= ImGui::DragFloat("Rotational Period", &p.rotational_period, std::max(p.rotational_period / 10.f, 1e-5f), 0, FLT_MAX, "%.9g s", ImGuiSliderFlags_AlwaysClamp);
-        update |= ImGui::DragFloat("Yaw", &p.yaw, 0.5f, 0, 180, u8"%.2f °", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_NoRoundToFormat);
+        update |= ImGui::DragFloat("Yaw", &p.yaw, 0.5f, 0, 360, u8"%.2f °", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_NoRoundToFormat);
 
         ImGui::SeparatorText("Appearance");
 
@@ -1424,7 +1433,9 @@ public:
             ofn.Flags = OFN_FILEMUSTEXIST;
 
             if (!GetOpenFileNameA(reinterpret_cast<LPOPENFILENAMEA>(&ofn))) {
-                glfwRestoreWindow(window);
+                if (glfwGetWindowMonitor(window) == nullptr)
+                    glfwShowWindow(window);
+                else glfwRestoreWindow(window);
                 *buffptr = static_cast<unsigned char*>(nullptr);
             }
 
@@ -1447,8 +1458,14 @@ public:
                         if (i == entries.size() - 1) {
                             unsigned char* textureBuffer;
                             std::string filename;
-                            try { filename = load_texture(&textureBuffer); }
-                            catch (Error) { continue; }
+                            double lastFrame = glfwGetTime();
+                            try {
+                                filename = load_texture(&textureBuffer);
+                            } catch (Error) {
+                                glfwSetTime(lastFrame);
+                                continue;
+                            }
+                            glfwSetTime(lastFrame);
                             if (textureBuffer == nullptr) continue;
 
                             glActiveTexture(GL_TEXTURE0 + tex);
@@ -1459,7 +1476,9 @@ public:
 
                             free(textureBuffer);
                             entries.insert(entries.begin() + i, filename);
-                            glfwRestoreWindow(window);
+                            if (glfwGetWindowMonitor(window) == nullptr)
+                                glfwShowWindow(window);
+                            else glfwRestoreWindow(window);
                         }
                         *ptr = i;
                         update = true;
