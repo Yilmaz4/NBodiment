@@ -163,6 +163,10 @@ void main() {
         }
     }
 
+    if (p.rotational_period != 0.f) {
+        p.yaw += 360.f * timeDelta / p.rotational_period;
+        p.yaw = mod(p.yaw, 360.f);
+    }  
     p.acc = totalAcc;
     p.vel += p.acc * timeDelta;
     p.pos += p.vel * timeDelta;
