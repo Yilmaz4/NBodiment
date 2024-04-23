@@ -243,13 +243,20 @@ public:
 
         int w, h, nrChannels;
         unsigned char* data;
+        auto blankdata = new unsigned char[16 * 16 * 3]{};
         glm::vec3 avgColor = glm::vec3(0.f);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_CUBE_MAP, this->textureID);
+        std::string root = std::string(buffer).substr(0, pos);
         for (int i = 0; i < 6; i++) {
-            std::string path = std::format("{}\\assets\\{}{}.jpg", std::string(buffer).substr(0, pos), tex, i);
+            std::string path = std::format("{}\\assets\\{}{}.jpg", root, tex, i);
             data = stbi_load(path.c_str(), &w, &h, &nrChannels, 0);
-            if (!data) throw Error("Skybox not available");
+            if (!data && std::filesystem::exists(std::format("{}\\assets", root))) {
+                throw Error("Skybox not available");
+            } else if (!data) {
+                for (i = 0; i < 6; i++) glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, 16, 16, 0, GL_RGB, GL_UNSIGNED_BYTE, blankdata);
+                return glm::vec3(0.f);
+            }
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
             for (int i = 0; i < w * nrChannels; i += nrChannels) {
                 for (int j = 0; j < h; j++) {
@@ -791,6 +798,7 @@ public:
     float bloomThreshold = 1.f;
     float exposure = 0.05f;
     int accumulationFrameIndex = 0;
+    bool skybox = false;
     int skyboxImage = 0;
 
     Particle satellite;
@@ -924,6 +932,13 @@ public:
         ImGui::load_theme();
         ImGui_ImplGlfw_InitForOpenGL(window, true);
         ImGui_ImplOpenGL3_Init("#version 460");
+
+        char buffer[MAX_PATH] = { 0 };
+        GetModuleFileNameA(NULL, buffer, MAX_PATH);
+        std::string::size_type pos = std::string(buffer).find_last_of("\\/");
+
+        std::string root = std::string(buffer).substr(0, pos);
+        skybox = std::filesystem::exists(std::format("{}\\assets", root));
 
         camera = Camera();
     }
@@ -1266,7 +1281,7 @@ public:
             const char* images[] = { "Milky Way", "Sorsele", "Mountains" };
             preview = images[skyboxImage];
 
-            if (ImGui::BeginCombo("Skybox", preview)) {
+            if (skybox && ImGui::BeginCombo("Skybox", preview)) {
                 for (int n = 0; n < 3; n++) {
                     const bool is_selected = (skyboxImage == n);
                     if (ImGui::Selectable(images[n], is_selected)) {
