@@ -1417,7 +1417,7 @@ public:
 
         ImGui::SeparatorText("Appearance");
 
-        auto load_texture = [this](unsigned char** buffptr) {
+        auto load_texture = [this](unsigned char** buffptr, int* nrChannels) {
             OPENFILENAMEA ofn;
             char szFileName[MAX_PATH];
             char szFileTitle[MAX_PATH];
@@ -1449,12 +1449,12 @@ public:
                 return ofn.lpstrFileTitle;
             }
 
-            int w, h, nrChannels;
-            unsigned char* data = stbi_load(ofn.lpstrFile, &w, &h, &nrChannels, 0);
+            int w, h;
+            unsigned char* data = stbi_load(ofn.lpstrFile, &w, &h, nrChannels, 0);
 
             if (!data) throw Error("Failed to load texture");
 
-            *buffptr = stbir_resize_uint8_linear(data, w, h, NULL, nullptr, 4096, 2048, NULL, static_cast<stbir_pixel_layout>(nrChannels));
+            *buffptr = stbir_resize_uint8_linear(data, w, h, NULL, nullptr, 4096, 2048, NULL, static_cast<stbir_pixel_layout>(*nrChannels));
             free(data);
             return ofn.lpstrFileTitle;
         };
@@ -1467,10 +1467,11 @@ public:
                     if (ImGui::Selectable(entries[i].c_str(), is_selected)) {
                         if (i == entries.size() - 1) {
                             unsigned char* textureBuffer;
+                            int nrChannels;
                             std::string filename;
                             double lastFrame = glfwGetTime();
                             try {
-                                filename = load_texture(&textureBuffer);
+                                filename = load_texture(&textureBuffer, &nrChannels);
                             } catch (Error) {
                                 glfwSetTime(lastFrame);
                                 continue;
@@ -1480,7 +1481,7 @@ public:
 
                             glActiveTexture(GL_TEXTURE0 + tex);
                             glBindTexture(GL_TEXTURE_2D_ARRAY, arr);
-                            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i - 1, 4096, 2048, 1, GL_RGB, GL_UNSIGNED_BYTE, textureBuffer);
+                            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i - 1, 4096, 2048, 1, 0x1904 + nrChannels, GL_UNSIGNED_BYTE, textureBuffer);
 
                             glDebugMessageCallback(glMessageCallback, 0);
 
