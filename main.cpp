@@ -944,6 +944,7 @@ public:
     }
 
     static inline void on_windowResize(GLFWwindow* window, int w, int h) {
+        if (w == 0 || h == 0) return;
         NBodiment* app = static_cast<NBodiment*>(glfwGetWindowUserPointer(window));
 
         app->res = { w, h };
@@ -1198,7 +1199,6 @@ public:
             lockedToParticle = false;
         }
     }
-
 
     ImVec2 renderSettingsUI(double fps, double currentTime, double lastFrame) {
         ImGui::PushFont(ImGui::font);
