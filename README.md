@@ -9,9 +9,8 @@
 </div>
 A gravitational N-body simulator with path-tracing, rigid body physics and rotational mechanics, made in C++ and OpenGL. For my highschool physics project. Finished as of 25/03/24
 <p>&nbsp;</p>
-<div>
-  <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/d3f9f67e-d602-470a-9f84-7d18106c977b" width="450px" />
-</div>
+
+https://github.com/Yilmaz4/NBodiment/assets/77583632/93b6b96e-0d86-4cac-ac73-0756e50e33ba
 
 ## Controls
 **WASD** - camera movement\
