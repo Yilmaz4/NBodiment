@@ -7,8 +7,8 @@
 <div>
   <img src="https://github.com/Yilmaz4/NBodiment/assets/77583632/a1bf6f1b-ea59-488a-b093-90d16f50358c" height="100px" />
 </div>
+
 A gravitational N-body simulator with path-tracing, rigid body physics and rotational mechanics, made in C++ and OpenGL. For my highschool physics project. Finished as of 25/03/24
-<p>&nbsp;</p>
 
 https://github.com/Yilmaz4/NBodiment/assets/77583632/93b6b96e-0d86-4cac-ac73-0756e50e33ba
 
