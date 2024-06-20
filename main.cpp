@@ -17,6 +17,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <imgui_internal.h>
+#include <implot.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_resize2.h>
 #include <glad/glad.h>
@@ -779,6 +780,11 @@ public:
     std::vector<Particle> original;
     std::vector<Particle> pBuffer;
 
+    float time;
+    std::vector<float> timeAxis;
+    std::vector<float> kinetic_energy;
+    float min_ke, max_ke;
+
     glm::ivec2 res;
     glm::ivec2 pos = { 60, 60 };
     std::bitset<6> keys{ 0x0 };
@@ -838,7 +844,7 @@ public:
         glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
 
 #ifdef _DEBUG
-        res = { 1280, 850 };
+        res = { 1280, 889 };
         window = glfwCreateWindow(res.x, res.y, "NBodiment", NULL, NULL);
 #else
         window = glfwCreateWindow(res.x, res.y, "NBodiment", monitor, NULL);
@@ -1103,6 +1109,9 @@ public:
     }
 
     void generate_scene() {
+        kinetic_energy.clear();
+        timeAxis.clear();
+        time = min_ke = max_ke = 0;
         std::random_device rd;
         std::mt19937 rng(rd());
 
@@ -1347,7 +1356,7 @@ public:
             ImGuiWindowFlags_AlwaysAutoResize |
             ImGuiWindowFlags_NoMove
         )) {
-            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 20000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 1000000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
             ImGui::DragFloatRange2("Distance", &scene.min_distance, &scene.max_distance, scene.max_distance / 10.f, FLT_MIN, FLT_MAX, "%.9g m", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Mass", &scene.min_mass, &scene.max_mass, scene.max_mass / 10.f, FLT_MIN, FLT_MAX, "%.9g kg", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Density", &scene.min_density, &scene.max_density, scene.max_density / 10.f, FLT_MIN, FLT_MAX, u8"%.9g kg/m³", nullptr, ImGuiSliderFlags_AlwaysClamp);
@@ -1661,6 +1670,7 @@ public:
             double dt = currentTime - lastFrame;
             fps = 1.0 / dt;
 
+            float current_avgKineticEnergy = 0;
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
@@ -1680,6 +1690,7 @@ public:
             for (int i = 0; i < pBuffer.size(); i++) {
                 if (lockedToParticle && i == following) continue;
                 Particle p = pBuffer[i];
+                current_avgKineticEnergy += p.mass * pow(glm::length(p.vel), 2) / (2 * pBuffer.size());
 
                 glm::vec3 origin = camera.position - p.pos;
                 float a = glm::dot(direction, direction);
@@ -1695,7 +1706,14 @@ public:
                 }
             }
             hoveringParticle = closest != -1.f;
-            
+            if (!paused) {
+                kinetic_energy.push_back(current_avgKineticEnergy);
+                if (current_avgKineticEnergy < min_ke) min_ke = current_avgKineticEnergy;
+                if (current_avgKineticEnergy > max_ke) max_ke = current_avgKineticEnergy;
+                timeAxis.push_back(time);
+                time += timeStep * static_cast<float>(dt);
+            }
+
             if (hoveringParticle) {
                 hovering = closest;
                 if (!ImGui::GetIO().WantCaptureMouse) {
@@ -1777,6 +1795,24 @@ public:
                 ImGui::SetWindowPos({ res.x / 2.f - ImGui::GetWindowWidth() / 2.f, 30 });
                 ImGui::PopFont();
                 ImGui::End();
+            }
+
+            if (!camera.mouseLocked) {
+                ImPlot::CreateContext();
+                ImGui::PushFont(ImGui::font);
+                ImGui::SetNextWindowSize({ sceneGenSize.x, 220 });
+                ImGui::SetNextWindowPos({ 10, settingsSize.y + sceneGenSize.y + 30.f });
+                ImGui::Begin("Plot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove);
+                if (ImPlot::BeginPlot("Average Kinetic Energy vs. Time", ImVec2(-1, -1))) {
+                    ImPlot::SetupAxes("Time (s)", "Energy (J)", ImPlotAxisFlags_AutoFit, ImPlotAxisFlags_AutoFit);
+                    ImPlot::SetupAxisLimits(ImAxis_X1, 0, time);
+                    ImPlot::SetupAxisLimits(ImAxis_Y1, min_ke, max_ke);
+                    ImPlot::PlotLine("Avg. KE", timeAxis.data(), kinetic_energy.data(), timeAxis.size());
+                    ImPlot::EndPlot();
+                }
+                ImGui::PopFont();
+                ImGui::End();
+                ImPlot::DestroyContext();
             }
             ImGui::Render();
 
