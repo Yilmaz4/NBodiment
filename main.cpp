@@ -783,7 +783,7 @@ public:
     float time;
     std::vector<float> timeAxis;
     std::vector<float> kinetic_energy;
-    float min_ke, max_ke;
+    float min_ke = FLT_MAX, max_ke = FLT_MIN;
 
     glm::ivec2 res;
     glm::ivec2 pos = { 60, 60 };
@@ -1111,7 +1111,9 @@ public:
     void generate_scene() {
         kinetic_energy.clear();
         timeAxis.clear();
-        time = min_ke = max_ke = 0;
+        time = 0;
+        min_ke = FLT_MAX;
+        max_ke = FLT_MIN;
         std::random_device rd;
         std::mt19937 rng(rd());
 
