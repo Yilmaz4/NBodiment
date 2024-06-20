@@ -211,16 +211,17 @@ class Shader {
     };
     
 protected:
-    static inline char* read_resource(int name) {
+    static inline char* read_resource(int name, DWORD* size = nullptr) {
         HMODULE handle = GetModuleHandleW(NULL);
         HRSRC rc = FindResourceW(handle, MAKEINTRESOURCE(name), MAKEINTRESOURCE(TEXTFILE));
         if (rc == NULL) return nullptr;
         HGLOBAL rcData = LoadResource(handle, rc);
         if (rcData == NULL) return nullptr;
-        DWORD size = SizeofResource(handle, rc);
-        char* res = new char[size + 1];
-        memcpy(res, static_cast<const char*>(LockResource(rcData)), size);
-        res[size] = '\0';
+        DWORD s = SizeofResource(handle, rc);
+        char* res = new char[s + 1];
+        memcpy(res, static_cast<const char*>(LockResource(rcData)), s);
+        res[s] = '\0';
+        if (size) *size = s;
         return res;
     }
 
@@ -234,7 +235,7 @@ protected:
         }
     }
 public:
-    GLuint id;
+    GLuint id = 0;
 
     inline glm::vec3 load_textures(int tex) {
         char buffer[MAX_PATH] = { 0 };
@@ -270,6 +271,7 @@ public:
     }
 
     inline virtual void create() {
+        if (id) free();
         char* vertexSource = read_resource(IDR_VRTX);
         char* fragmentSource = read_resource(IDR_FRAG);
 
@@ -282,6 +284,9 @@ public:
         glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
         glCompileShader(fragmentShader);
         check_for_errors(fragmentShader);
+
+        delete[] vertexSource;
+        delete[] fragmentSource;
 
         id = glCreateProgram();
         glAttachShader(id, vertexShader);
@@ -562,10 +567,16 @@ public:
 class ComputeShader : public Shader {
     GLuint computeShader;
 public:
-    inline virtual void create() override {
+    inline void create(bool insert_collisionCode) {
+        if (id) free();
         int success;
         char infoLog[1024];
-        char* computeSource = read_resource(IDR_CMPT);
+        DWORD cSize;
+        char* cs = read_resource(IDR_CMPT, &cSize);
+        char* collisionCode = read_resource(IDR_COLL);
+        char* computeSource = new char[cSize + 2048];
+        sprintf_s(computeSource, cSize + 2048, cs, insert_collisionCode ? collisionCode : "");
+        delete[] cs;
 
         computeShader = glCreateShader(GL_COMPUTE_SHADER);
         glShaderSource(computeShader, 1, &computeSource, NULL);
@@ -575,6 +586,7 @@ public:
             glGetShaderInfoLog(computeShader, 1024, NULL, infoLog);
             throw Error(infoLog);
         }
+        delete[] computeSource;
 
         id = glCreateProgram();
         glAttachShader(id, computeShader);
@@ -727,6 +739,8 @@ struct Scene {
     float central_density = 2e+10f;
     float central_temperature = 3e+3;
     float central_luminosity = 15.f;
+
+    bool prevent_overlap = true;
 };
 
 struct Controls {
@@ -743,7 +757,6 @@ struct Controls {
     GLenum speedup   = GLFW_KEY_R;
     GLenum speeddown = GLFW_KEY_F;
     GLenum follow    = GLFW_KEY_X;
-    GLenum toggleGI  = GLFW_KEY_G;
 };
 
 class NBodiment {
@@ -792,7 +805,7 @@ public:
     bool lockedToParticle = false;
     glm::dvec2 mousePos;
     int numRaysPerPixel = 10;
-    bool globalIllumination = false;
+    int renderer = 1;
     bool shadows = true;
     bool bloom = true;
     float bloomThreshold = 1.f;
@@ -848,7 +861,7 @@ public:
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
 
         cmptshader = new ComputeShader();
-        cmptshader->create();
+        cmptshader->create(collisionType != 2);
         cmptshader->use();
         glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
@@ -864,8 +877,9 @@ public:
         glUniform3f(glGetUniformLocation(shader->id, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         glUniform1i(glGetUniformLocation(shader->id, "numParticles"), static_cast<GLint>(pBuffer.size()));
         glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
-        glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
+        glUniform1i(glGetUniformLocation(shader->id, "renderer"), renderer);
         glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
+        glUniform2f(glGetUniformLocation(shader->id, "screenSize"), res.x, res.y);
 
         glActiveTexture(GL_TEXTURE3);
         glGenTextures(1, &textureArray);
@@ -903,7 +917,7 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, res.x, res.y, 0, GL_RGBA, GL_FLOAT, NULL);
         glBindTexture(GL_TEXTURE_2D, NULL);
-        
+
         glGenFramebuffers(1, &fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, screenTexture, 0);
@@ -1021,9 +1035,6 @@ public:
                     app->following = app->selected;
                 }
                 app->accumulationFrameIndex = 0;
-            } if (key == app->controls.toggleGI) {
-                app->globalIllumination ^= 1;
-                glUniform1i(glGetUniformLocation(app->shader->id, "globalIllumination"), app->globalIllumination);
             }
             break;
         case GLFW_RELEASE:
@@ -1144,16 +1155,18 @@ public:
                             rho * sin(theta)* sin(phi) };
             if (scene.planar_deviation == 0.f) p.y = 0.f;
 
-            bool abort_flag = false;
-            for (int j = 0; pBuffer.size() != 0 && j < i + static_cast<int>(scene.central_body); j++)
-                if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r)
-                    abort_flag = true;
-            if (abort_flag && tries < 100) {
-                i -= 1;
-                tries += 1;
-                continue;
+            if (scene.prevent_overlap) {
+                bool abort_flag = false;
+                for (int j = 0; pBuffer.size() != 0 && j < i + static_cast<int>(scene.central_body); j++)
+                    if (glm::distance(pBuffer[j].pos, p) < pBuffer[j].radius + r)
+                        abort_flag = true;
+                if (abort_flag && tries < 10) {
+                    i -= 1;
+                    tries += 1;
+                    continue;
+                }
+                tries = 0;
             }
-            tries = 0;
 
             glm::vec3 v{};
             if (scene.orbital_velocity && scene.central_body) v = glm::cross(glm::normalize(p), glm::vec3(0.f, 1.f, 0.f)) * sqrt(6.67430e-11f * (scene.central_mass + m) / glm::length(p));
@@ -1245,6 +1258,11 @@ public:
                     const bool is_selected = (collisionType == n);
                     if (ImGui::Selectable(types[n], is_selected)) {
                         collisionType = n;
+                        cmptshader->free();
+                        cmptshader->create(collisionType != 2);
+                        cmptshader->use();
+                        glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
+                        glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
                     }
                     if (is_selected) ImGui::SetItemDefaultFocus();
                 }
@@ -1254,26 +1272,37 @@ public:
             ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
 
             ImGui::SeparatorText("Graphics");
-            if (ImGui::ToggleButton("Global Illumination", &globalIllumination)) {
-                glUniform1i(glGetUniformLocation(shader->id, "globalIllumination"), globalIllumination);
+
+            const char* renderers[] = { "Rasterizer", "Ray tracer", "Path tracer" };
+            preview = renderers[renderer];
+
+            if (ImGui::BeginCombo("Renderer", preview)) {
+                for (int n = 0; n < 3; n++) {
+                    const bool is_selected = (renderer == n);
+                    if (ImGui::Selectable(renderers[n], is_selected)) {
+                        renderer = n;
+                        glUniform1i(glGetUniformLocation(shader->id, "renderer"), renderer);
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
             }
-            if (globalIllumination) {
-                ImGui::SameLine();
+            if (renderer == 2) {
                 if (ImGui::Button("Reset accumulation"))
                     accumulationFrameIndex = 0;
                 if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
                     glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
             } else {
                 ImGui::SameLine();
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.f);
                 ImGui::HelpMarker("Global illumination, or path tracing, is a computer algorithm to produce physically based and realistic-looking 3D scenes by simulating the very nature of light, which causes optical effects like reflection, refraction and soft shadows to naturally emerge instead of having to be explicitly implemented.\n\nPause the simulation to start accumulating samples in order to address noise.");
             }
-            ImGui::ToggleButton("Bloom", &bloom);
-            if (!globalIllumination) {
-                ImGui::SameLine();
+            if (renderer == 1) {
                 if (ImGui::ToggleButton("Shadows", &shadows))
                     glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
+                ImGui::SameLine();
             }
+            ImGui::ToggleButton("Bloom", &bloom);
+            
             if (bloom) {
                 ImGui::DragFloat("Bloom threshold", &bloomThreshold, std::max(bloomThreshold / 20, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                 ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
@@ -1318,7 +1347,7 @@ public:
             ImGuiWindowFlags_AlwaysAutoResize |
             ImGuiWindowFlags_NoMove
         )) {
-            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 10000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 20000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
             ImGui::DragFloatRange2("Distance", &scene.min_distance, &scene.max_distance, scene.max_distance / 10.f, FLT_MIN, FLT_MAX, "%.9g m", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Mass", &scene.min_mass, &scene.max_mass, scene.max_mass / 10.f, FLT_MIN, FLT_MAX, "%.9g kg", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Density", &scene.min_density, &scene.max_density, scene.max_density / 10.f, FLT_MIN, FLT_MAX, u8"%.9g kg/m³", nullptr, ImGuiSliderFlags_AlwaysClamp);
@@ -1337,6 +1366,8 @@ public:
             ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal, 3.f);
 
             if (ImGui::Button("Generate", ImVec2(100, 0))) generate_scene();
+            ImGui::SameLine();
+            ImGui::Checkbox("Prevent overlap", &scene.prevent_overlap);
         }
         ImGui::PopFont();
         ImVec2 sceneGenSize = ImGui::GetWindowSize();
@@ -1482,8 +1513,6 @@ public:
                             glActiveTexture(GL_TEXTURE0 + tex);
                             glBindTexture(GL_TEXTURE_2D_ARRAY, arr);
                             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i - 1, 4096, 2048, 1, 0x1904 + nrChannels, GL_UNSIGNED_BYTE, textureBuffer);
-
-                            glDebugMessageCallback(glMessageCallback, 0);
 
                             free(textureBuffer);
                             entries.insert(entries.begin() + i, filename);
@@ -1749,9 +1778,6 @@ public:
                 ImGui::PopFont();
                 ImGui::End();
             }
-            glClearColor(0.f, 0.f, 0.f, 1.f);
-            glClear(GL_COLOR_BUFFER_BIT);
-
             ImGui::Render();
 
             shader->use();
@@ -1764,9 +1790,16 @@ public:
             glUniform1f(glGetUniformLocation(shader->id, "timeDelta"), timeStep * static_cast<float>(dt) * int(!paused) * (reverse ? -1 : 1));
             glUniform1f(glGetUniformLocation(shader->id, "uTime"), static_cast<float>(currentTime));
             glUniform1i(glGetUniformLocation(shader->id, "accumulationFrameIndex"), accumulationFrameIndex);
-            if (globalIllumination && paused) accumulationFrameIndex++;
+            if (renderer == 2 && paused)
+                accumulationFrameIndex++;
             else accumulationFrameIndex = 0;
-            glDrawArrays(GL_TRIANGLES, 0, 36);
+            if (renderer == 0) {
+                glClearColor(0.f, 0.f, 0.f, 1.f);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glDrawArrays(GL_POINTS, 0, pBuffer.size());
+            } else {
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            }
 
             pprocshader->use();
             pprocshader->render(bloom, screenTexture, bloomThreshold, exposure, accumulationFrameIndex);

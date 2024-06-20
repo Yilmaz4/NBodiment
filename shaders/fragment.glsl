@@ -122,7 +122,7 @@ uniform mat4 invViewMatrix;
 uniform vec3 cameraPos;
 uniform vec3 ambientLight;
 uniform int spp;
-uniform bool globalIllumination;
+uniform int renderer;
 uniform bool shadows;
 
 out vec4 fragColor;
@@ -269,7 +269,11 @@ void main() {
     vec3 direction = vec3(invViewMatrix * vec4(normalize(vec3(invProjMatrix * vec4(2.f * coord - 1.f, 1.f, 1.f))), 0));
     vec3 origin = cameraPos;
 
-    if (globalIllumination) {
+
+    if (renderer == 0) {
+        fragColor = vec4(1.f);
+
+    } else if (renderer == 2) {
         vec3 irradiance = vec3(0.f);
         for (int i = 1; i < spp + 1; i++) {
             vec3 radiance = trace(origin, direction, i);
@@ -285,7 +289,7 @@ void main() {
             vec3 pixel = texture(previousFrame, gl_FragCoord.xy / screenSize).rgb;
             fragColor = vec4(mix(pixel, irradiance / float(spp), 1.f / accumulationFrameIndex), 1.f);
         }
-    } else {
+    } else if (renderer == 1) {
         float mt = 1.f / 0.f;
         int pidx = -1;
         int lightSources[100]; // max number of lights in scene, adjust as needed
