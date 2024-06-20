@@ -112,12 +112,10 @@ void main() {
     for (int i = 0; i < gl_NumWorkGroups.x; ++i) {
         if (i != pidx) {
             Particle q = read(i * offset);
-            if (q.mass < 1e-10) continue;
+            if (q.mass < 1e-10) continue; // skip negligible force
             vec3 dir = q.pos - p.pos;
             float distSqr = dot(dir, dir);
-            
-            %s
-
+            %s // collision code
             vec3 forceDir = normalize(dir);
             float forceMagnitude = G * p.mass * q.mass / distSqr;
             vec3 force = forceDir * forceMagnitude;
