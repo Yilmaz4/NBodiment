@@ -33,7 +33,6 @@ const int offset = 33;
 layout(std430, binding = 0) volatile buffer vBuffer {
     float vs[];
 };
-uniform int numParticles;
 
 Particle read(in int i) {
     return Particle(
@@ -106,60 +105,23 @@ float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
 
 void main() {
     if (timeDelta == 0) return;
-    Particle p = read(int(gl_GlobalInvocationID.x) * offset);
+    int pidx = int(gl_GlobalInvocationID.x);
+    Particle p = read(pidx * offset);
     if (p.mass == 0) return;
     vec3 totalAcc = vec3(0.0);
     for (int i = 0; i < gl_NumWorkGroups.x; ++i) {
-        if (i != int(gl_GlobalInvocationID.x)) {
+        if (i != pidx) {
             Particle q = read(i * offset);
-            if (q.mass == 0) continue;
+            if (q.mass < 1e-10) continue;
             vec3 dir = q.pos - p.pos;
-            float dist = distance(q.pos, p.pos);
-            float minDist = (p.radius + q.radius);
-            if (dist < minDist && collisionType != 2) {
-                if (collisionType == 1) {
-                    if (p.mass > q.mass) {
-                        float density = p.mass / (4.f * PI * pow(p.radius, 3) / 3.f);
-                        p.mass += q.mass;
-                        p.radius = cbrt((3.f * (p.mass / density)) / (4.f * PI));
-                        q.mass = 0;
-                        q.radius = 0;
-                        write(i * offset, q);
-                    }
-                    else {
-                        float density = q.mass / (4.f * PI * pow(q.radius, 3) / 3.f);
-                        q.mass += p.mass;
-                        q.radius = cbrt((3.f * (q.mass / density)) / (4.f * PI));
-                        p.mass = 0;
-                        p.radius = 0;
-                        write(i * offset, q);
-                        write(int(gl_GlobalInvocationID.x) * offset, p);
-                        return;
-                    }
-                }
-                else {
-                    if (p.mass > q.mass) {
-                        q.pos = p.pos + normalize(q.pos - p.pos) * minDist;
-                    }
-                    else {
-                        p.pos = q.pos + normalize(p.pos - q.pos) * minDist;
-                    }
-                    vec3 relVel = q.vel - p.vel;
-                    float dotProduct = dot(relVel, normalize(dir));
-                    vec3 velNormal = dotProduct * normalize(dir);
-                    float impulseScalar = (-2 * dot(velNormal, normalize(dir))) / (1.0 / p.mass + 1.0 / q.mass);
-                    p.vel -= impulseScalar / p.mass * normalize(dir);
-                    q.vel += impulseScalar / q.mass * normalize(dir);
-                    write(i * offset, q);
-                    break;
-                }
-            }
-            else {
-                vec3 forceDir = normalize(dir);
-                float forceMagnitude = G * p.mass * q.mass / (dist * dist);
-                vec3 force = forceDir * forceMagnitude;
-                totalAcc += force / p.mass;
-            }
+            float distSqr = dot(dir, dir);
+            
+            %s
+
+            vec3 forceDir = normalize(dir);
+            float forceMagnitude = G * p.mass * q.mass / distSqr;
+            vec3 force = forceDir * forceMagnitude;
+            totalAcc += force / p.mass;
         }
     }
 
