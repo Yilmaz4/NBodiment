@@ -3,10 +3,11 @@
 #define IDR_VRTX 101
 #define IDR_FRAG 102
 #define IDR_CMPT 103
+#define IDR_COLL 104
 
-#define IDR_UPSAMPLE 104
-#define IDR_DWSAMPLE 105
-#define IDR_FULLQUAD 106
-#define IDR_DISPLAYT 107
+#define IDR_UPSAMPLE 110
+#define IDR_DWSAMPLE 111
+#define IDR_FULLQUAD 112
+#define IDR_DISPLAYT 113
 
-#define IDI_ICON 108
+#define IDI_ICON 120

@@ -90,6 +90,9 @@
       <Filter>Resources\Shaders\Bloom</Filter>
     </None>
     <None Include="README.md" />
+    <None Include="shaders\collision.glsl">
+      <Filter>Resources\Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Headers">
