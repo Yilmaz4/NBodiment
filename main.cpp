@@ -1356,7 +1356,7 @@ public:
             ImGuiWindowFlags_AlwaysAutoResize |
             ImGuiWindowFlags_NoMove
         )) {
-            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 1000000, "%d", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 10000, "%d", ImGuiSliderFlags_Logarithmic);
             ImGui::DragFloatRange2("Distance", &scene.min_distance, &scene.max_distance, scene.max_distance / 10.f, FLT_MIN, FLT_MAX, "%.9g m", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Mass", &scene.min_mass, &scene.max_mass, scene.max_mass / 10.f, FLT_MIN, FLT_MAX, "%.9g kg", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Density", &scene.min_density, &scene.max_density, scene.max_density / 10.f, FLT_MIN, FLT_MAX, u8"%.9g kg/m³", nullptr, ImGuiSliderFlags_AlwaysClamp);
