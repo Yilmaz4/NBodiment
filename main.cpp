@@ -576,8 +576,8 @@ public:
         DWORD cSize;
         char* cs = read_resource(IDR_CMPT, &cSize);
         char* collisionCode = read_resource(IDR_COLL);
-        char* computeSource = new char[cSize + 2048];
-        sprintf_s(computeSource, cSize + 2048, cs, insert_collisionCode ? collisionCode : "");
+        char* computeSource = new char[cSize + 4096];
+        sprintf_s(computeSource, cSize + 4096, cs, insert_collisionCode ? collisionCode : "", insert_collisionCode ? collisionCode : "");
         delete[] cs;
 
         computeShader = glCreateShader(GL_COMPUTE_SHADER);
@@ -874,6 +874,7 @@ public:
         cmptshader->use();
         glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
         glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
+        glUniform1i(glGetUniformLocation(cmptshader->id, "mutualAttraction"), mutual_attraction);
 
         pprocshader = new PostProcessing(res.x, res.y, 8);
         pprocshader->create();
@@ -889,7 +890,6 @@ public:
         glUniform1i(glGetUniformLocation(shader->id, "renderer"), renderer);
         glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
         glUniform2f(glGetUniformLocation(shader->id, "screenSize"), res.x, res.y);
-        glUniform1i(glGetUniformLocation(shader->id, "mutualAttraction"), mutual_attraction);
 
         glActiveTexture(GL_TEXTURE3);
         glGenTextures(1, &textureArray);
@@ -1278,6 +1278,7 @@ public:
                         cmptshader->use();
                         glShaderStorageBlockBinding(cmptshader->id, glGetProgramResourceIndex(cmptshader->id, GL_SHADER_STORAGE_BLOCK, "vBuffer"), 0);
                         glUniform1i(glGetUniformLocation(cmptshader->id, "collisionType"), collisionType);
+                        glUniform1i(glGetUniformLocation(cmptshader->id, "mutualAttraction"), mutual_attraction);
                     }
                     if (is_selected) ImGui::SetItemDefaultFocus();
                 }
@@ -1287,7 +1288,9 @@ public:
             ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
 
             if (ImGui::Checkbox("Mutual attraction", &mutual_attraction)) {
-                glUniform1i(glGetUniformLocation(shader->id, "mutualAttraction"), mutual_attraction);
+                cmptshader->use();
+                glUniform1i(glGetUniformLocation(cmptshader->id, "mutualAttraction"), mutual_attraction);
+                shader->use();
             }
 
             ImGui::SeparatorText("Graphics");

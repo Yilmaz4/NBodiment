@@ -105,18 +105,9 @@ float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
     return y;
 }
 
-vec3 attract(Particle p, int pidx, int qidx) {
-    Particle q = read(qidx * offset);
-    if (q.mass < 1e-10) return vec3(0.f);
-    vec3 dir = q.pos - p.pos;
-    float distSqr = dot(dir, dir);
-
-    %s // collision code
-
-    vec3 forceDir = normalize(dir);
-    float forceMagnitude = G * p.mass * q.mass / distSqr;
-    vec3 force = forceDir * forceMagnitude;
-    return force / p.mass;
+Particle attract(Particle p, int pidx, int qidx) {
+    
+    return p;
 }
 
 void main() {
@@ -126,16 +117,35 @@ void main() {
     if (p.mass == 0) return;
     vec3 totalAcc = vec3(0.0);
 
-    if (mutualAttraction == 1) {
+    if (mutualAttraction != 0) {
         for (int i = 0; i < gl_NumWorkGroups.x; ++i) {
-            vec3 acc = attract(p, pidx, i);
-            if (isnan(acc.x)) break;
-            if (isnan(acc.y)) return;
-            if (i != pidx) totalAcc += acc;
+            if (i != pidx) {
+                Particle q = read(i * offset);
+                if (q.mass < 1e-10) return;
+                vec3 dir = q.pos - p.pos;
+                float distSqr = dot(dir, dir);
+
+                %s // collision code
+
+                vec3 forceDir = normalize(dir);
+                float forceMagnitude = G * p.mass * q.mass / distSqr;
+                vec3 force = forceDir * forceMagnitude;
+                totalAcc += force / p.mass;
+            }
         }
     }
-    else if (strongestAttractor != pidx) {
-        totalAcc = attract(p, pidx, strongestAttractor);
+    else if (pidx != strongestAttractor) {
+        int i = strongestAttractor;
+        Particle q = read(i * offset);
+        vec3 dir = q.pos - p.pos;
+        float distSqr = dot(dir, dir);
+
+        do { %s } while (false);
+
+        vec3 forceDir = normalize(dir);
+        float forceMagnitude = G * p.mass * q.mass / distSqr;
+        vec3 force = forceDir * forceMagnitude;
+        totalAcc = force / p.mass;
     }
 
     if (p.rotational_period != 0.f) {
