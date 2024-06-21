@@ -7,7 +7,7 @@ if (sqrt(distSqr) < minDist) {
             p.radius = cbrt((3.f * (p.mass / density)) / (4.f * PI));
             q.mass = 0;
             q.radius = 0;
-            write(i * offset, q);
+            write(qidx * offset, q);
         }
         else {
             float density = q.mass / (4.f * PI * pow(q.radius, 3) / 3.f);
@@ -15,9 +15,9 @@ if (sqrt(distSqr) < minDist) {
             q.radius = cbrt((3.f * (q.mass / density)) / (4.f * PI));
             p.mass = 0;
             p.radius = 0;
-            write(i * offset, q);
+            write(qidx * offset, q);
             write(pidx * offset, p);
-            return;
+            return vec3(0.f, 1.f / 0.f, 0.f);
         }
     }
     else {
@@ -33,7 +33,7 @@ if (sqrt(distSqr) < minDist) {
         float impulseScalar = (-2 * dot(velNormal, normalize(dir))) / (1.0 / p.mass + 1.0 / q.mass);
         p.vel -= impulseScalar / p.mass * normalize(dir);
         q.vel += impulseScalar / q.mass * normalize(dir);
-        write(i * offset, q);
-        break;
+        write(qidx * offset, q);
+        return vec3(1.f / 0.f, 0.f, 0.f);
     }
 }

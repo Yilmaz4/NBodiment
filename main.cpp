@@ -210,7 +210,7 @@ class Shader {
          1.0f,  1.0f,
          1.0f, -1.0f
     };
-    
+
 protected:
     static inline char* read_resource(int name, DWORD* size = nullptr) {
         HMODULE handle = GetModuleHandleW(NULL);
@@ -245,7 +245,7 @@ public:
 
         int w, h, nrChannels;
         unsigned char* data;
-        auto blankdata = new unsigned char[16 * 16 * 3]{};
+        auto blankdata = new unsigned char[16 * 16 * 3] {};
         glm::vec3 avgColor = glm::vec3(0.f);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_CUBE_MAP, this->textureID);
@@ -255,7 +255,8 @@ public:
             data = stbi_load(path.c_str(), &w, &h, &nrChannels, 0);
             if (!data && std::filesystem::exists(std::format("{}\\assets", root))) {
                 throw Error("Skybox not available");
-            } else if (!data) {
+            }
+            else if (!data) {
                 for (i = 0; i < 6; i++) glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, 16, 16, 0, GL_RGB, GL_UNSIGNED_BYTE, blankdata);
                 return glm::vec3(0.f);
             }
@@ -319,7 +320,7 @@ public:
 
         glUniform1i(glGetUniformLocation(id, "skybox"), 0);
     }
-    inline virtual void use() const { 
+    inline virtual void use() const {
         glUseProgram(id);
         glBindVertexArray(vao);
         glActiveTexture(GL_TEXTURE0);
@@ -630,9 +631,9 @@ struct Particle {
 class Camera {
     GLuint shader = NULL;
 public:
-    glm::vec3 position =  { 0.f,  0.f, 10.f };
+    glm::vec3 position = { 0.f,  0.f, 10.f };
     glm::vec3 direction = { 0.f,  0.f, -1.f };
-    glm::vec3 upvector =  { 0.f,  1.f,  0.f };
+    glm::vec3 upvector = { 0.f,  1.f,  0.f };
 
     glm::vec3 localCoords;
     glm::vec3 localUp;
@@ -659,7 +660,7 @@ public:
         else
             view = glm::lookAt(position, position + direction, { 0.f, 1.f, 0.f });
         auto proj = glm::perspective(glm::radians(fov), w / h, nearPlane, farPlane);
-        
+
         glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_FALSE, glm::value_ptr(proj));
         glUniformMatrix4fv(glGetUniformLocation(shader, "invViewMatrix"), 1, GL_FALSE, glm::value_ptr(glm::inverse(view)));
@@ -698,10 +699,10 @@ public:
     }
 
     void rotate(float xoffset, float yoffset) {
-        yaw   += xoffset * sensitivity * (following ? -1.f : 1.f);
+        yaw += xoffset * sensitivity * (following ? -1.f : 1.f);
         pitch += yoffset * sensitivity;
 
-        if (pitch >  89.0f) pitch =  89.0f;
+        if (pitch > 89.0f) pitch = 89.0f;
         if (pitch < -89.0f) pitch = -89.0f;
 
         direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
@@ -745,19 +746,19 @@ struct Scene {
 };
 
 struct Controls {
-    GLenum forward   = GLFW_KEY_W;
-    GLenum backward  = GLFW_KEY_S;
-    GLenum leftward  = GLFW_KEY_A;
+    GLenum forward = GLFW_KEY_W;
+    GLenum backward = GLFW_KEY_S;
+    GLenum leftward = GLFW_KEY_A;
     GLenum rightward = GLFW_KEY_D;
-    GLenum upward    = GLFW_KEY_SPACE;
-    GLenum downward  = GLFW_KEY_LEFT_SHIFT;
-    GLenum del       = GLFW_KEY_DELETE;
-    GLenum camctrl   = GLFW_KEY_LEFT_CONTROL;
-    GLenum pause     = GLFW_KEY_Q;
-    GLenum reverse   = GLFW_KEY_E;
-    GLenum speedup   = GLFW_KEY_R;
+    GLenum upward = GLFW_KEY_SPACE;
+    GLenum downward = GLFW_KEY_LEFT_SHIFT;
+    GLenum del = GLFW_KEY_DELETE;
+    GLenum camctrl = GLFW_KEY_LEFT_CONTROL;
+    GLenum pause = GLFW_KEY_Q;
+    GLenum reverse = GLFW_KEY_E;
+    GLenum speedup = GLFW_KEY_R;
     GLenum speeddown = GLFW_KEY_F;
-    GLenum follow    = GLFW_KEY_X;
+    GLenum follow = GLFW_KEY_X;
 };
 
 class NBodiment {
@@ -795,6 +796,8 @@ public:
     bool was_paused = false;
     bool reverse = false;
     int collisionType = 0;
+    bool mutual_attraction = true;
+    int strongestAttractor = 0;
 
     std::vector<std::string> textures{ "None", "Add new texture..." };
     GLuint textureArray;
@@ -886,6 +889,7 @@ public:
         glUniform1i(glGetUniformLocation(shader->id, "renderer"), renderer);
         glUniform1i(glGetUniformLocation(shader->id, "shadows"), shadows);
         glUniform2f(glGetUniformLocation(shader->id, "screenSize"), res.x, res.y);
+        glUniform1i(glGetUniformLocation(shader->id, "mutualAttraction"), mutual_attraction);
 
         glActiveTexture(GL_TEXTURE3);
         glGenTextures(1, &textureArray);
@@ -974,7 +978,7 @@ public:
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, app->screenTexture);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, app->res.x, app->res.y, 0, GL_RGBA, GL_FLOAT, NULL);
-        
+
         app->pprocshader->screenSize = app->res;
         glm::vec2 mipSize = app->res;
         glm::ivec2 mipIntSize = static_cast<glm::ivec2>(app->res);
@@ -1126,7 +1130,7 @@ public:
         std::uniform_real_distribution<float> elevation(-scene.planar_deviation * M_PI_2 / 90.f, scene.planar_deviation * M_PI_2 / 90.f);
         std::uniform_real_distribution<float> azimuth(-M_PI, M_PI);
         std::uniform_real_distribution<float> clr(0.f, 1.f);
-        
+
         pBuffer.clear();
 
         if (scene.central_body) {
@@ -1150,7 +1154,7 @@ public:
                 .translucency = 0.f,
                 .refractive_index = 1.f,
                 .blurriness = 0.f
-            }));
+                }));
         }
         int tries = 0;
         for (int i = 0; i < scene.num_particles; i++) {
@@ -1163,7 +1167,7 @@ public:
             float phi = azimuth(rng);
             glm::vec3 p = { rho * sin(theta) * cos(phi),
                             rho * cos(theta),
-                            rho * sin(theta)* sin(phi) };
+                            rho * sin(theta) * sin(phi) };
             if (scene.planar_deviation == 0.f) p.y = 0.f;
 
             if (scene.prevent_overlap) {
@@ -1184,7 +1188,7 @@ public:
             else v = glm::normalize(glm::vec3(unit_vec(rng), unit_vec(rng), unit_vec(rng))) * vel(rng);
 
             glm::vec3 c = { clr(rng), clr(rng), clr(rng) };
-            
+
             pBuffer.push_back(Particle({
                 .pos = p,
                 .vel = v,
@@ -1205,7 +1209,7 @@ public:
                 .translucency = 0.f,
                 .refractive_index = 1.f,
                 .blurriness = 0.f
-            }));
+                }));
         }
 
         original = pBuffer;
@@ -1282,6 +1286,10 @@ public:
             ImGui::SameLine();
             ImGui::HelpMarker("In elastic collisions, particles bounce off each other while conserving momentum. In inelastic collisions, masses are merged and momentum is not conserved.");
 
+            if (ImGui::Checkbox("Mutual attraction", &mutual_attraction)) {
+                glUniform1i(glGetUniformLocation(shader->id, "mutualAttraction"), mutual_attraction);
+            }
+
             ImGui::SeparatorText("Graphics");
 
             const char* renderers[] = { "Rasterizer", "Ray tracer", "Path tracer" };
@@ -1303,7 +1311,8 @@ public:
                     accumulationFrameIndex = 0;
                 if (ImGui::SliderInt("Samples per pixel", &numRaysPerPixel, 1, 5000, "%d", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat))
                     glUniform1i(glGetUniformLocation(shader->id, "spp"), numRaysPerPixel);
-            } else {
+            }
+            else {
                 ImGui::SameLine();
                 ImGui::HelpMarker("Global illumination, or path tracing, is a computer algorithm to produce physically based and realistic-looking 3D scenes by simulating the very nature of light, which causes optical effects like reflection, refraction and soft shadows to naturally emerge instead of having to be explicitly implemented.\n\nPause the simulation to start accumulating samples in order to address noise.");
             }
@@ -1313,7 +1322,7 @@ public:
                 ImGui::SameLine();
             }
             ImGui::ToggleButton("Bloom", &bloom);
-            
+
             if (bloom) {
                 ImGui::DragFloat("Bloom threshold", &bloomThreshold, std::max(bloomThreshold / 20, 1e-2f), 0.f, FLT_MAX, "%.9g", ImGuiSliderFlags_NoRoundToFormat);
                 ImGui::DragFloat("Exposure", &exposure, exposure / 20, FLT_MIN, FLT_MAX, "%.3g", ImGuiSliderFlags_NoRoundToFormat);
@@ -1499,8 +1508,8 @@ public:
             *buffptr = stbir_resize_uint8_linear(data, w, h, NULL, nullptr, 4096, 2048, NULL, static_cast<stbir_pixel_layout>(*nrChannels));
             free(data);
             return ofn.lpstrFileTitle;
-        };
-        
+            };
+
         auto texturecombo = [this, &load_texture, &update](const char* label, int* ptr, std::vector<std::string>& entries, GLuint arr, int tex) {
             const std::string preview = entries[*ptr];
             if (ImGui::BeginCombo(label, preview.c_str())) {
@@ -1514,7 +1523,8 @@ public:
                             double lastFrame = glfwGetTime();
                             try {
                                 filename = load_texture(&textureBuffer, &nrChannels);
-                            } catch (Error) {
+                            }
+                            catch (Error) {
                                 glfwSetTime(lastFrame);
                                 continue;
                             }
@@ -1539,14 +1549,15 @@ public:
                 }
                 ImGui::EndCombo();
             }
-        };
+            };
 
         texturecombo("Texture", &p.texture, textures, textureArray, 3);
 
         if (p.texture == 0) {
             update |= ImGui::ColorEdit3("Albedo", glm::value_ptr(p.albedo));
             ImGui::SameLine(); ImGui::HelpMarker("Proportion of the incident light that is reflected by the surface.");
-        } else {
+        }
+        else {
             texturecombo("Normal map", &p.normmap, normmaps, normmapArray, 4);
             texturecombo("Specular map", &p.specmap, specmaps, specmapArray, 5);
             if (ImGui::BeginTabBar("Textures", NULL)) {
@@ -1562,14 +1573,14 @@ public:
                     ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
                     ImGui::EndTabItem();
                 }
-                if (p.specmap &&ImGui::BeginTabItem("Specular map")) {
+                if (p.specmap && ImGui::BeginTabItem("Specular map")) {
                     glTextureView(textureViews, GL_TEXTURE_2D, specmapArray, GL_RGB8, 0, 1, p.specmap - 1, 1);
                     ImGui::Image(reinterpret_cast<void*>(textureViews), ImVec2(290, 145));
                     ImGui::EndTabItem();
                 }
                 ImGui::EndTabBar();
             }
-            
+
         }
         update |= ImGui::ColorEdit3("Emission Color", glm::value_ptr(p.emissionColor));
         update |= ImGui::DragFloat("Luminosity", &p.luminosity, 0.2f, FLT_MIN, FLT_MAX);
@@ -1835,7 +1846,8 @@ public:
                 glClearColor(0.f, 0.f, 0.f, 1.f);
                 glClear(GL_COLOR_BUFFER_BIT);
                 glDrawArrays(GL_POINTS, 0, pBuffer.size());
-            } else {
+            }
+            else {
                 glDrawArrays(GL_TRIANGLES, 0, 36);
             }
 

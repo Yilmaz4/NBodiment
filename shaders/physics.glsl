@@ -87,6 +87,8 @@ void write(in int i, in Particle p) {
 
 uniform float timeDelta;
 uniform int collisionType; // 0: elastic, 1: inelastic, 2: none
+uniform int mutualAttraction;
+uniform int strongestAttractor = 0;
 
 const float G = 6.67430e-11;
 const float PI = 3.14159265;
@@ -103,30 +105,43 @@ float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
     return y;
 }
 
+vec3 attract(Particle p, int pidx, int qidx) {
+    Particle q = read(qidx * offset);
+    if (q.mass < 1e-10) return vec3(0.f);
+    vec3 dir = q.pos - p.pos;
+    float distSqr = dot(dir, dir);
+
+    %s // collision code
+
+    vec3 forceDir = normalize(dir);
+    float forceMagnitude = G * p.mass * q.mass / distSqr;
+    vec3 force = forceDir * forceMagnitude;
+    return force / p.mass;
+}
+
 void main() {
     if (timeDelta == 0) return;
     int pidx = int(gl_GlobalInvocationID.x);
     Particle p = read(pidx * offset);
     if (p.mass == 0) return;
     vec3 totalAcc = vec3(0.0);
-    for (int i = 0; i < gl_NumWorkGroups.x; ++i) {
-        if (i != pidx) {
-            Particle q = read(i * offset);
-            if (q.mass < 1e-10) continue; // skip negligible force
-            vec3 dir = q.pos - p.pos;
-            float distSqr = dot(dir, dir);
-            %s // collision code
-            vec3 forceDir = normalize(dir);
-            float forceMagnitude = G * p.mass * q.mass / distSqr;
-            vec3 force = forceDir * forceMagnitude;
-            totalAcc += force / p.mass;
+
+    if (mutualAttraction == 1) {
+        for (int i = 0; i < gl_NumWorkGroups.x; ++i) {
+            vec3 acc = attract(p, pidx, i);
+            if (isnan(acc.x)) break;
+            if (isnan(acc.y)) return;
+            if (i != pidx) totalAcc += acc;
         }
+    }
+    else if (strongestAttractor != pidx) {
+        totalAcc = attract(p, pidx, strongestAttractor);
     }
 
     if (p.rotational_period != 0.f) {
         p.yaw += 360.f * timeDelta / p.rotational_period;
         p.yaw = mod(p.yaw, 360.f);
-    }  
+    }
     p.acc = totalAcc;
     p.vel += p.acc * timeDelta;
     p.pos += p.vel * timeDelta;
