@@ -742,7 +742,7 @@ struct Scene {
     float central_temperature = 3e+3;
     float central_luminosity = 15.f;
 
-    bool prevent_overlap = true;
+    bool prevent_overlap = false;
 };
 
 struct Controls {
@@ -1370,7 +1370,7 @@ public:
             ImGuiWindowFlags_AlwaysAutoResize |
             ImGuiWindowFlags_NoMove
         )) {
-            ImGui::SliderInt("# Particles", &scene.num_particles, 0, 10000, "%d", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderInt("# Particles", &scene.num_particles, 0, mutual_attraction ? 10000 : 400000, "%d", ImGuiSliderFlags_Logarithmic);
             ImGui::DragFloatRange2("Distance", &scene.min_distance, &scene.max_distance, scene.max_distance / 10.f, FLT_MIN, FLT_MAX, "%.9g m", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Mass", &scene.min_mass, &scene.max_mass, scene.max_mass / 10.f, FLT_MIN, FLT_MAX, "%.9g kg", nullptr, ImGuiSliderFlags_AlwaysClamp);
             ImGui::DragFloatRange2("Density", &scene.min_density, &scene.max_density, scene.max_density / 10.f, FLT_MIN, FLT_MAX, u8"%.9g kg/m³", nullptr, ImGuiSliderFlags_AlwaysClamp);
@@ -1707,6 +1707,12 @@ public:
                 if (lockedToParticle && i == following) continue;
                 Particle p = pBuffer[i];
                 current_avgKineticEnergy += p.mass * pow(glm::length(p.vel), 2) / (2 * pBuffer.size());
+                if (p.mass > pBuffer[strongestAttractor].mass) {
+                    strongestAttractor = i;
+                    cmptshader->use();
+                    glUniform1i(glGetUniformLocation(cmptshader->id, "strongestAttractor"), strongestAttractor);
+                    shader->use();
+                }
 
                 glm::vec3 origin = camera.position - p.pos;
                 float a = glm::dot(direction, direction);
