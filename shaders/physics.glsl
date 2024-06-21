@@ -105,11 +105,6 @@ float cbrt(float x) { // https://www.shadertoy.com/view/wts3RX
     return y;
 }
 
-Particle attract(Particle p, int pidx, int qidx) {
-    
-    return p;
-}
-
 void main() {
     if (timeDelta == 0) return;
     int pidx = int(gl_GlobalInvocationID.x);
