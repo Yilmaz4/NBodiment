@@ -483,7 +483,7 @@ public:
         glActiveTexture(GL_TEXTURE0);
 
         glEnable(GL_BLEND);
-        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFunc(GL_ONE, GL_SRC_ALPHA);
 
         glUniform1i(glGetUniformLocation(displaytProgramID, "accumulationFrameIndex"), accumulationFrameIndex);
         glUniform1f(glGetUniformLocation(displaytProgramID, "transparency"), 0.0);
@@ -847,7 +847,7 @@ public:
         glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
 
 #ifdef _DEBUG
-        res = { 1280, 889 };
+        res = { 1280, 910 };
         window = glfwCreateWindow(res.x, res.y, "NBodiment", NULL, NULL);
 #else
         window = glfwCreateWindow(res.x, res.y, "NBodiment", monitor, NULL);
@@ -1146,7 +1146,7 @@ public:
                 .rotational_period = 0.f,
                 .yaw = 0.f,
 
-                .albedo = glm::vec3(0.f, 0.f, 0.f),
+                .albedo = glm::vec3(1.f, 1.f, 1.f),
                 .emissionColor = glm::vec3(1.f, 1.f, 1.f),
                 .luminosity = scene.central_luminosity,
                 .specularity = 0.f,
