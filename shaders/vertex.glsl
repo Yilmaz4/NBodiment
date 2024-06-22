@@ -90,10 +90,15 @@ void write(in int i, in Particle p) {
     vs[i + 32] = intBitsToFloat(p.specmapid);
 }
 
+out vec3 albedo;
+
 void main() {
     if (renderer == 0) {
-        gl_Position = (projMatrix * viewMatrix) * vec4(read(gl_VertexID * offset).pos, 1);
+        Particle p = read(gl_VertexID * offset);
+        gl_Position = (projMatrix * viewMatrix) * vec4(p.pos, 1);
+        albedo = p.albedo;
     } else {
         gl_Position = vec4(aPos, 1.f);
+        albedo = vec3(0.f);
     }
 }

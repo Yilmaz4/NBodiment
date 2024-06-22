@@ -125,6 +125,8 @@ uniform int spp;
 uniform int renderer;
 uniform bool shadows;
 
+in vec3 albedo;
+
 out vec4 fragColor;
 
 float random(inout uint state) {
@@ -271,8 +273,7 @@ void main() {
 
 
     if (renderer == 0) {
-        fragColor = vec4(1.f);
-
+        fragColor = vec4(albedo, 0.f);
     } else if (renderer == 2) {
         vec3 irradiance = vec3(0.f);
         for (int i = 1; i < spp + 1; i++) {
