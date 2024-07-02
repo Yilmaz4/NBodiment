@@ -9,5 +9,5 @@ uniform int accumulationFrameIndex;
 
 void main() {
 	vec3 pixel = texture(screenTexture, vec2(gl_FragCoord.x / screenSize.x, gl_FragCoord.y / screenSize.y)).rgb;
-	fragColor = vec4(pixel, 1.f - transparency);
+	fragColor = vec4(pixel, transparency);
 }
