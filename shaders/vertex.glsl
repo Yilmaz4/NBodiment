@@ -99,6 +99,5 @@ void main() {
         albedo = p.albedo;
     } else {
         gl_Position = vec4(aPos, 1.f);
-        albedo = vec3(0.f);
     }
 }
